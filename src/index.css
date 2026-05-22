@@ -1,0 +1,217 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Base
+───────────────────────────────────────────────────────────────────────── */
+html { scroll-behavior: smooth; }
+
+body {
+  @apply antialiased text-white;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+* { -webkit-font-smoothing: antialiased; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Scrollbar
+───────────────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: rgba(255,255,255,0.02); }
+::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.12);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Utilities — typography
+───────────────────────────────────────────────────────────────────────── */
+.font-display { font-family: 'Plus Jakarta Sans', 'Inter', sans-serif; letter-spacing: -0.02em; }
+.font-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+.line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Glassmorphism v2 — más profundidad, borde luminoso
+───────────────────────────────────────────────────────────────────────── */
+.glass {
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255,255,255,0.08),
+    0 8px 32px -8px rgba(0,0,0,0.3);
+}
+
+.glass-strong {
+  background: rgba(255,255,255,0.10);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255,255,255,0.15);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255,255,255,0.12),
+    0 12px 40px -12px rgba(0,0,0,0.4);
+}
+
+.glass-card {
+  background: linear-gradient(
+    135deg,
+    rgba(255,255,255,0.08) 0%,
+    rgba(255,255,255,0.04) 100%
+  );
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255,255,255,0.10),
+    0 4px 24px -8px rgba(0,0,0,0.25);
+  transition: all 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(255,255,255,0.10) 0%,
+    rgba(255,255,255,0.06) 100%
+  );
+  border-color: rgba(255,255,255,0.18);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255,255,255,0.14),
+    0 12px 40px -12px rgba(0,0,0,0.4);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Mesh gradient background
+───────────────────────────────────────────────────────────────────────── */
+.mesh-bg {
+  position: relative;
+  overflow: hidden;
+}
+
+.mesh-bg::before,
+.mesh-bg::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.mesh-bg::before {
+  width: 600px; height: 600px;
+  top: -200px; right: -200px;
+  background: var(--mesh-color-1, rgba(255,107,0,0.25));
+  animation: float 12s ease-in-out infinite;
+}
+
+.mesh-bg::after {
+  width: 500px; height: 500px;
+  bottom: -150px; left: -150px;
+  background: var(--mesh-color-2, rgba(255,215,0,0.18));
+  animation: float 15s ease-in-out infinite reverse;
+}
+
+.mesh-bg > * { position: relative; z-index: 1; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Number badges (variation %)
+───────────────────────────────────────────────────────────────────────── */
+.badge-positive {
+  background: linear-gradient(135deg, rgba(34,197,94,0.20), rgba(16,185,129,0.15));
+  color: rgb(134,239,172);
+  border: 1px solid rgba(34,197,94,0.25);
+}
+
+.badge-negative {
+  background: linear-gradient(135deg, rgba(239,68,68,0.20), rgba(220,38,38,0.15));
+  color: rgb(252,165,165);
+  border: 1px solid rgba(239,68,68,0.25);
+}
+
+.badge-neutral {
+  background: rgba(255,255,255,0.10);
+  color: rgba(255,255,255,0.70);
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Recharts theming
+───────────────────────────────────────────────────────────────────────── */
+.recharts-cartesian-grid-horizontal line,
+.recharts-cartesian-grid-vertical line {
+  stroke: rgba(255,255,255,0.06);
+}
+
+.recharts-cartesian-axis-tick-value {
+  fill: rgba(255,255,255,0.55);
+  font-size: 11px;
+}
+
+.recharts-tooltip-wrapper { outline: none !important; }
+
+.recharts-default-tooltip {
+  background: rgba(15,15,20,0.95) !important;
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.15) !important;
+  border-radius: 12px !important;
+  padding: 12px 16px !important;
+  box-shadow: 0 12px 40px -8px rgba(0,0,0,0.5) !important;
+}
+
+.recharts-tooltip-label {
+  color: rgba(255,255,255,0.6) !important;
+  font-size: 11px !important;
+  margin-bottom: 4px !important;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.recharts-tooltip-item { color: white !important; font-size: 13px !important; font-weight: 500 !important; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Loading skeletons
+───────────────────────────────────────────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255,255,255,0.04) 0%,
+    rgba(255,255,255,0.10) 50%,
+    rgba(255,255,255,0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Focus
+───────────────────────────────────────────────────────────────────────── */
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid rgba(255,255,255,0.55);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Noise texture overlay (sutil, premium feel)
+───────────────────────────────────────────────────────────────────────── */
+.noise-overlay {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  z-index: 1;
+  background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Print / presentation mode tweaks
+───────────────────────────────────────────────────────────────────────── */
+.presentation-mode .sidebar-hideable { display: none !important; }
+.presentation-mode main { margin-left: 0 !important; }
