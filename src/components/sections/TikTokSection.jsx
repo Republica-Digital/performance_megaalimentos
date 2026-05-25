@@ -7,7 +7,7 @@ import { TopPostsSection } from '../ui/PostCard'
 import { safeNumber, prevMonth, pctChange } from '../../utils/format'
 import { PaidMediaSection } from './SocialSection'
 
-const ACCENT = '#22d3ee'
+const ACCENT = '#a855f7'
 
 export function TikTokSection({
   data, campanas = [], proyecciones = [], topPosts = [],
@@ -61,7 +61,7 @@ export function TikTokSection({
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard title="Seguidores"       value={safeNumber(data.seguidores)}        icon={Users}      accentColor={ACCENT}     variation={pctChange(data.seguidores, prevData?.seguidores)} delay={0} />
-        <KPICard title="Views"            value={safeNumber(data.views)}             icon={Play}       accentColor="#ec4899"    variation={pctChange(data.views, prevData?.views)} delay={1} />
+        <KPICard title="Views"            value={safeNumber(data.views)}             icon={Play}       accentColor="#f97316"    variation={pctChange(data.views, prevData?.views)} delay={1} />
         <KPICard title="Views 6s+"        value={safeNumber(data.views_6s)}          icon={Eye}        accentColor="#a78bfa"    variation={pctChange(data.views_6s, prevData?.views_6s)} delay={2} />
         <KPICard title="Interacciones"    value={safeNumber(data.interacciones)}     icon={Heart}      accentColor="#f43f5e"    variation={pctChange(data.interacciones, prevData?.interacciones)} delay={3} />
       </div>
@@ -93,8 +93,8 @@ export function TikTokSection({
             <TrendLineChart data={trendData} scale={scale} expanded={expanded}
               lines={[
                 { key: 'Seguidores',    name: 'Seguidores',    color: ACCENT },
-                { key: 'Views',         name: 'Views',         color: '#ec4899' },
-                { key: 'Interacciones', name: 'Interacciones', color: '#f43f5e' },
+                { key: 'Views',         name: 'Views',         color: '#f97316' },
+                { key: 'Interacciones', name: 'Interacciones', color: '#ef4444' },
               ]}
             />
           )}
