@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { Users, Eye, Heart, Megaphone, TrendingUp, Sparkles, AlertTriangle, Trophy } from 'lucide-react'
 import { KPICard, KPICardSkeleton } from '../ui/KPICard'
 import { SectionHeader } from '../ui/SectionHeader'
-import { ChartCard, TrendLineChart, DistributionDonut } from '../ui/Charts'
+import { ChartCard, TrendLineChart, MultiScaleLineChart, DistributionDonut } from '../ui/Charts'
 import { ObservacionesButton } from '../ui/ObservacionesCard'
 import { SentimentGauge } from '../ui/SentimentGauge'
 import { safeNumber, formatCurrency, prevMonth, pctChange } from '../../utils/format'
@@ -48,18 +48,22 @@ export function Overview({ data, historical, selectedMonth, loading, theme, feat
   const prevInteracciones = safeNumber(prevFb?.interacciones) + safeNumber(prevIg?.interacciones) + safeNumber(prevTt?.interacciones)
   const prevInversion     = 0 // Will show variation only when historical campañas data is available
 
-  // Followers trend
+  // Followers trend — last 6 months up to and including selectedMonth
+  // Works for both 'month' mode and 'range' mode (selectedMonth = effectiveMonth from Dashboard)
   const trendMonths = new Set()
   ;[...(historical.facebook||[]), ...(historical.instagram||[]), ...(historical.tiktok||[])]
     .forEach(r => r.mes && trendMonths.add(r.mes))
-  const sortedTrendMonths = Array.from(trendMonths).sort().slice(-6)
+  const sortedTrendMonths = Array.from(trendMonths)
+    .sort()
+    .filter(m => !selectedMonth || m <= selectedMonth)
+    .slice(-6)
 
   const followerTrend = sortedTrendMonths.map(mes => ({
     mes,
     Facebook:  safeNumber((historical.facebook || []).find(r => r.mes === mes)?.seguidores),
     Instagram: safeNumber((historical.instagram || []).find(r => r.mes === mes)?.seguidores),
     TikTok:    safeNumber((historical.tiktok || []).find(r => r.mes === mes)?.seguidores),
-  }))
+  })).filter(d => d.Facebook > 0 || d.Instagram > 0 || d.TikTok > 0)
 
   // Investment distribution (from Campañas grouped by platform)
   const campByPlat = {}
@@ -108,11 +112,10 @@ export function Overview({ data, historical, selectedMonth, loading, theme, feat
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <ChartCard title="Crecimiento de Seguidores" subtitle="Últimos 6 meses por plataforma" className="lg:col-span-2">
-          {({ scale, expanded }) => (
-            <TrendLineChart
+        <ChartCard title="Crecimiento de Seguidores" subtitle="Últimos 6 meses por plataforma" className="lg:col-span-2" allowLogScale={false}>
+          {({ expanded }) => (
+            <MultiScaleLineChart
               data={followerTrend}
-              scale={scale}
               expanded={expanded}
               lines={[
                 { key: 'Facebook',  name: 'Facebook',  color: '#3b82f6' },
