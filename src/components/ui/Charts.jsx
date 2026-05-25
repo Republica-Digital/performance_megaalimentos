@@ -209,7 +209,8 @@ function EnhancedTooltip({ active, payload, label, labelFormatter }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TrendLineChart — smart domain + dual axis + patterns (Cambios A, B, D)
+// TrendLineChart — dual axis when series magnitudes differ >5x (secciones)
+// Each axis groups series that are within 5x of each other.
 // ─────────────────────────────────────────────────────────────────────────────
 export function TrendLineChart({ data, lines, height = 280, xKey = 'mes', scale = 'linear', expanded = false }) {
   if (!data?.length) return <NoData />
@@ -282,6 +283,90 @@ export function TrendLineChart({ data, lines, height = 280, xKey = 'mes', scale 
             </Line>
           )
         })}
+      </LineChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MultiScaleLineChart — for Overview follower trend across platforms.
+// Each series gets its own hidden Y axis with its own domain, so every line
+// shows its relative movement clearly regardless of absolute magnitude.
+// Tooltip always shows real absolute values.
+// ─────────────────────────────────────────────────────────────────────────────
+export function MultiScaleLineChart({ data, lines, height = 280, xKey = 'mes', expanded = false }) {
+  if (!data?.length) return <NoData />
+  const h = expanded ? 500 : height
+
+  // Build a per-series domain so each line uses its full vertical space
+  const perSeriesDomain = {}
+  for (const line of lines) {
+    perSeriesDomain[line.key] = computeAxisDomain(data, [line.key])
+  }
+
+  // One hidden YAxis per series, plus one visible left axis showing the
+  // label "Seguidores" for reference (uses the first series domain)
+  const yAxisIds = lines.map(l => `y_${l.key}`)
+
+  return (
+    <ResponsiveContainer width="100%" height={h}>
+      <LineChart data={data} margin={{ top: 30, right: 24, left: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+        <XAxis
+          dataKey={xKey}
+          tickFormatter={formatMonthShort}
+          stroke="rgba(255,255,255,0.5)"
+          tickLine={false} axisLine={false} fontSize={11}
+        />
+
+        {/* One hidden axis per series — provides individual scaling */}
+        {lines.map((line, idx) => (
+          <YAxis
+            key={`y_${line.key}`}
+            yAxisId={`y_${line.key}`}
+            domain={perSeriesDomain[line.key]}
+            hide={idx !== 0}           // only show the first axis for scale reference
+            tickFormatter={formatNumber}
+            stroke="rgba(255,255,255,0.4)"
+            tickLine={false} axisLine={false}
+            width={58} fontSize={11}
+          />
+        ))}
+
+        <Tooltip
+          content={<EnhancedTooltip labelFormatter={formatMonthShort} />}
+          cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 }}
+        />
+        <Legend
+          wrapperStyle={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', paddingTop: 8 }}
+          iconType="circle"
+          formatter={(value, entry) => (
+            <span style={{ color: entry.color }}>{value}</span>
+          )}
+        />
+
+        {lines.map((line, idx) => (
+          <Line
+            key={line.key}
+            yAxisId={`y_${line.key}`}
+            type="monotone"
+            dataKey={line.key}
+            name={line.name}
+            stroke={line.color}
+            strokeWidth={2.5}
+            strokeDasharray={DASH_PATTERNS[idx % DASH_PATTERNS.length]}
+            dot={DOT_SHAPES[idx % DOT_SHAPES.length](line.color)}
+            activeDot={{ r: 8, strokeWidth: 2, stroke: line.color, fill: '#0a0a0a' }}
+            isAnimationActive animationDuration={1000}
+          >
+            <LabelList
+              dataKey={line.key}
+              position="top"
+              formatter={formatNumber}
+              style={{ fill: line.color, fontSize: 10, fontWeight: 700 }}
+            />
+          </Line>
+        ))}
       </LineChart>
     </ResponsiveContainer>
   )
