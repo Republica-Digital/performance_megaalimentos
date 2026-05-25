@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { LineChart as LineChartIcon, Target } from 'lucide-react'
 import { SectionHeader, EmptyState } from '../ui/SectionHeader'
-import { ChartCard, TrendLineChart } from '../ui/Charts'
+import { ChartCard, ProjectionComboChart } from '../ui/Charts'
 import { DataTable } from '../ui/DataTable'
 import { CampaignToggle } from '../ui/CampaignToggle'
 import { safeNumber, formatNumber, truncTo } from '../../utils/format'
@@ -11,8 +11,8 @@ const ACCENT = '#22c55e'
 
 const PLATFORM_COLORS = {
   facebook:  '#3b82f6',
-  instagram: '#ec4899',
-  tiktok:    '#22d3ee',
+  instagram: '#f97316',
+  tiktok:    '#a855f7',
   google:    '#f59e0b',
   total:     '#22c55e',
 }
@@ -174,14 +174,11 @@ export function ProyeccionesSection({
             delay={idx}
           >
             {({ scale, expanded }) => (
-              <TrendLineChart
+              <ProjectionComboChart
                 data={chartData}
+                color={color}
                 scale={scale}
                 expanded={expanded}
-                lines={[
-                  { key: 'Real', name: 'Real', color },
-                  { key: 'Meta', name: 'Meta', color: '#facc15' },
-                ]}
               />
             )}
           </ChartCard>
