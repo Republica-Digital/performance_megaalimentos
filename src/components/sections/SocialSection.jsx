@@ -12,7 +12,7 @@ import { tipoCampanaToBucket, bucketToLabel } from '../../utils/campaigns'
 
 const PLATFORM_CONFIG = {
   facebook:  { icon: Facebook,  accent: '#3b82f6', label: 'Facebook' },
-  instagram: { icon: Instagram, accent: '#ec4899', label: 'Instagram' },
+    instagram: { icon: Instagram, accent: '#f97316', label: 'Instagram' },
 }
 
 const METRIC_STYLE = {
@@ -572,7 +572,7 @@ export function SocialSection({
               lines={[
                 { key: 'Seguidores',    name: 'Seguidores',    color: cfg.accent },
                 { key: 'Alcance',       name: 'Alcance',       color: '#22d3ee' },
-                { key: 'Interacciones', name: 'Interacciones', color: '#ec4899' },
+                { key: 'Interacciones', name: 'Interacciones', color: '#f43f5e' },
               ]}
             />
           )}
