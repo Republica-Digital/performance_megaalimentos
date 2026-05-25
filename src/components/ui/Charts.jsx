@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
-  LineChart, Line, BarChart, Bar, AreaChart, Area,
+  LineChart, Line, BarChart, Bar, AreaChart, Area, ComposedChart,
   PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, LabelList,
 } from 'recharts'
 import { Maximize2, X, LineChart as LineIcon, Activity } from 'lucide-react'
-import { formatNumber, formatMonthShort } from '../../utils/format'
+import { formatNumber, formatNumberFull, formatMonthShort, truncTo } from '../../utils/format'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Chart card — wraps any chart with title/subtitle + optional expand-to-modal
@@ -125,21 +125,121 @@ function sanitizeForLog(data, keys) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Multi-line trend (seguidores, etc.) — labels ALWAYS visible
+// Line dash patterns for multi-series differentiation
+// ─────────────────────────────────────────────────────────────────────────────
+const DASH_PATTERNS = ['', '8 4', '3 3', '12 3 3 3', '6 6']
+const DOT_SHAPES = [
+  (color) => ({ r: 5, fill: color, strokeWidth: 0 }),
+  (color) => ({ r: 5, fill: color, strokeWidth: 2, stroke: '#0a0a0a' }),
+  (color) => ({ r: 4, fill: '#0a0a0a', strokeWidth: 2, stroke: color }),
+]
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Smart Y domain with 10% padding & dual-axis detection
+// ─────────────────────────────────────────────────────────────────────────────
+function computeSmartDomain(data, keys) {
+  const allValues = []
+  for (const d of data) {
+    for (const k of keys) {
+      const v = parseFloat(d[k])
+      if (isFinite(v) && v > 0) allValues.push(v)
+    }
+  }
+  if (allValues.length === 0) return { domain: ['auto', 'auto'], needsDualAxis: false, primaryKeys: keys, secondaryKeys: [] }
+
+  const min = Math.min(...allValues)
+  const max = Math.max(...allValues)
+  const padding = (max - min) * 0.10 || max * 0.05
+  const domain = [Math.max(0, Math.floor(min - padding)), Math.ceil(max + padding)]
+
+  // Dual axis detection: compute average per key
+  const avgs = keys.map(k => {
+    const vals = data.map(d => parseFloat(d[k])).filter(v => isFinite(v) && v > 0)
+    return { key: k, avg: vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0 }
+  }).filter(a => a.avg > 0).sort((a, b) => b.avg - a.avg)
+
+  if (avgs.length < 2) return { domain, needsDualAxis: false, primaryKeys: keys, secondaryKeys: [] }
+
+  const ratio = avgs[0].avg / avgs[avgs.length - 1].avg
+  if (ratio > 5) {
+    const primaryKeys = [avgs[0].key]
+    const secondaryKeys = avgs.slice(1).map(a => a.key)
+    return { domain, needsDualAxis: true, primaryKeys, secondaryKeys }
+  }
+
+  return { domain, needsDualAxis: false, primaryKeys: keys, secondaryKeys: [] }
+}
+
+function computeAxisDomain(data, keys) {
+  const vals = []
+  for (const d of data) {
+    for (const k of keys) {
+      const v = parseFloat(d[k])
+      if (isFinite(v) && v > 0) vals.push(v)
+    }
+  }
+  if (vals.length === 0) return ['auto', 'auto']
+  const min = Math.min(...vals)
+  const max = Math.max(...vals)
+  const padding = (max - min) * 0.10 || max * 0.05
+  return [Math.max(0, Math.floor(min - padding)), Math.ceil(max + padding)]
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enhanced tooltip — shows full number on hover
+// ─────────────────────────────────────────────────────────────────────────────
+function EnhancedTooltip({ active, payload, label, labelFormatter }) {
+  if (!active || !payload?.length) return null
+  return (
+    <div style={{
+      background: 'rgba(15,15,25,0.95)',
+      border: '1px solid rgba(255,255,255,0.15)',
+      borderRadius: 12,
+      padding: '12px 16px',
+      boxShadow: '0 12px 40px -8px rgba(0,0,0,0.5)',
+    }}>
+      <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        {labelFormatter ? labelFormatter(label) : label}
+      </p>
+      {payload.map((entry, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: entry.color, flexShrink: 0 }} />
+          <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>{entry.name}:</span>
+          <span style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginLeft: 'auto' }}>
+            {formatNumberFull(entry.value)}
+          </span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-line trend — smart domain + dual axis + patterns
 // ─────────────────────────────────────────────────────────────────────────────
 export function TrendLineChart({ data, lines, height = 280, xKey = 'mes', scale = 'linear', expanded = false }) {
   if (!data?.length) return <NoData />
   const chartData = scale === 'log' ? sanitizeForLog(data, lines.map(l => l.key)) : data
   const h = expanded ? 500 : height
 
+  const keys = lines.map(l => l.key)
+  const { needsDualAxis, primaryKeys, secondaryKeys } = scale !== 'log'
+    ? computeSmartDomain(chartData, keys)
+    : { needsDualAxis: false, primaryKeys: keys, secondaryKeys: [] }
+
+  const leftDomain = scale === 'log' ? [1, 'auto']
+    : needsDualAxis ? computeAxisDomain(chartData, primaryKeys) : computeAxisDomain(chartData, keys)
+  const rightDomain = needsDualAxis ? computeAxisDomain(chartData, secondaryKeys) : undefined
+
   return (
     <ResponsiveContainer width="100%" height={h}>
-      <LineChart data={chartData} margin={{ top: 30, right: 24, left: 8, bottom: 8 }}>
+      <LineChart data={chartData} margin={{ top: 30, right: needsDualAxis ? 55 : 24, left: 8, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
         <XAxis dataKey={xKey} tickFormatter={formatMonthShort} stroke="rgba(255,255,255,0.5)" tickLine={false} axisLine={false} fontSize={11} />
         <YAxis
+          yAxisId="left"
           scale={scale === 'log' ? 'log' : 'auto'}
-          domain={scale === 'log' ? [1, 'auto'] : ['auto', 'auto']}
+          domain={leftDomain}
           tickFormatter={formatNumber}
           stroke="rgba(255,255,255,0.5)"
           tickLine={false}
@@ -148,34 +248,47 @@ export function TrendLineChart({ data, lines, height = 280, xKey = 'mes', scale 
           fontSize={11}
           allowDataOverflow={scale === 'log'}
         />
-        <Tooltip
-          contentStyle={{ background: 'rgba(15,15,25,0.95)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, fontSize: 12 }}
-          formatter={(v) => formatNumber(v)}
-          labelFormatter={formatMonthShort}
-          cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 }}
-        />
+        {needsDualAxis && (
+          <YAxis
+            yAxisId="right"
+            orientation="right"
+            domain={rightDomain}
+            tickFormatter={formatNumber}
+            stroke="rgba(255,255,255,0.35)"
+            tickLine={false}
+            axisLine={false}
+            width={55}
+            fontSize={11}
+          />
+        )}
+        <Tooltip content={<EnhancedTooltip labelFormatter={formatMonthShort} />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 }} />
         <Legend wrapperStyle={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', paddingTop: 8 }} iconType="circle" />
-        {lines.map((line) => (
-          <Line
-            key={line.key}
-            type="monotone"
-            dataKey={line.key}
-            name={line.name}
-            stroke={line.color}
-            strokeWidth={2.5}
-            dot={{ r: 4, fill: line.color, strokeWidth: 0 }}
-            activeDot={{ r: 7, strokeWidth: 2, stroke: line.color, fill: '#0a0a0a' }}
-            isAnimationActive
-            animationDuration={1000}
-          >
-            <LabelList
+        {lines.map((line, idx) => {
+          const isSecondary = needsDualAxis && secondaryKeys.includes(line.key)
+          return (
+            <Line
+              key={line.key}
+              yAxisId={isSecondary ? 'right' : 'left'}
+              type="monotone"
               dataKey={line.key}
-              position="top"
-              formatter={formatNumber}
-              style={{ fill: line.color, fontSize: 10, fontWeight: 600 }}
-            />
-          </Line>
-        ))}
+              name={line.name}
+              stroke={line.color}
+              strokeWidth={3}
+              strokeDasharray={DASH_PATTERNS[idx % DASH_PATTERNS.length]}
+              dot={DOT_SHAPES[idx % DOT_SHAPES.length](line.color)}
+              activeDot={{ r: 8, strokeWidth: 2, stroke: line.color, fill: '#0a0a0a' }}
+              isAnimationActive
+              animationDuration={1000}
+            >
+              <LabelList
+                dataKey={line.key}
+                position="top"
+                formatter={formatNumber}
+                style={{ fill: line.color, fontSize: 10, fontWeight: 600 }}
+              />
+            </Line>
+          )
+        })}
       </LineChart>
     </ResponsiveContainer>
   )
@@ -210,11 +323,7 @@ export function TrendAreaChart({ data, dataKey, color = '#FF6B00', height = 260,
           fontSize={11}
           allowDataOverflow={scale === 'log'}
         />
-        <Tooltip
-          contentStyle={{ background: 'rgba(15,15,25,0.95)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, fontSize: 12 }}
-          formatter={(v) => formatNumber(v)}
-          labelFormatter={formatMonthShort}
-        />
+        <Tooltip content={<EnhancedTooltip labelFormatter={formatMonthShort} />} />
         <Area
           type="monotone"
           dataKey={dataKey}
@@ -254,11 +363,7 @@ export function ComparisonBarChart({ data, bars, height = 280, xKey = 'name', sc
           fontSize={11}
           allowDataOverflow={scale === 'log'}
         />
-        <Tooltip
-          contentStyle={{ background: 'rgba(15,15,25,0.95)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, fontSize: 12 }}
-          formatter={(v) => formatNumber(v)}
-          cursor={{ fill: 'rgba(255,255,255,0.06)' }}
-        />
+        <Tooltip content={<EnhancedTooltip />} cursor={{ fill: 'rgba(255,255,255,0.06)' }} />
         <Legend wrapperStyle={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', paddingTop: 8 }} iconType="circle" />
         {bars.map((bar) => (
           <Bar key={bar.key} dataKey={bar.key} name={bar.name} fill={bar.color} radius={[8, 8, 0, 0]} maxBarSize={56}>
@@ -266,6 +371,181 @@ export function ComparisonBarChart({ data, bars, height = 280, xKey = 'name', sc
           </Bar>
         ))}
       </BarChart>
+    </ResponsiveContainer>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Projection combo chart — bars for Real + dashed line for Meta
+// Color-coded bars by achievement percentage
+// ─────────────────────────────────────────────────────────────────────────────
+function ProjectionTooltip({ active, payload, label, labelFormatter }) {
+  if (!active || !payload?.length) return null
+  const real = payload.find(p => p.dataKey === 'Real')
+  const meta = payload.find(p => p.dataKey === 'Meta')
+  const realVal = real?.value || 0
+  const metaVal = meta?.value || 0
+  const pct = metaVal > 0 ? (realVal / metaVal) * 100 : 0
+  const pctColor = pct >= 100 ? '#22c55e' : pct >= 80 ? '#facc15' : '#ef4444'
+
+  return (
+    <div style={{
+      background: 'rgba(15,15,25,0.95)',
+      border: '1px solid rgba(255,255,255,0.15)',
+      borderRadius: 12,
+      padding: '12px 16px',
+      boxShadow: '0 12px 40px -8px rgba(0,0,0,0.5)',
+      minWidth: 180,
+    }}>
+      <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        {labelFormatter ? labelFormatter(label) : label}
+      </p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div style={{ width: 8, height: 8, borderRadius: 2, background: pctColor, flexShrink: 0 }} />
+        <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>Real:</span>
+        <span style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginLeft: 'auto' }}>
+          {formatNumberFull(realVal)}
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#facc15', flexShrink: 0 }} />
+        <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>Meta:</span>
+        <span style={{ color: '#fff', fontSize: 13, fontWeight: 600, marginLeft: 'auto' }}>
+          {formatNumberFull(metaVal)}
+        </span>
+      </div>
+      {metaVal > 0 && (
+        <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: 6, paddingTop: 6, textAlign: 'center' }}>
+          <span style={{ color: pctColor, fontSize: 14, fontWeight: 700 }}>
+            {truncTo(pct, 1)}% cumplimiento
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AchievementBar(props) {
+  const { x, y, width, height: barHeight, payload } = props
+  const real = parseFloat(payload?.Real) || 0
+  const meta = parseFloat(payload?.Meta) || 0
+  const pct = meta > 0 ? (real / meta) * 100 : 0
+  const fill = pct >= 100 ? '#22c55e' : pct >= 80 ? '#facc15' : '#ef4444'
+  const radius = 6
+
+  if (barHeight <= 0) return null
+
+  return (
+    <g>
+      <defs>
+        <linearGradient id={`bar-grad-${x}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={fill} stopOpacity={0.9} />
+          <stop offset="100%" stopColor={fill} stopOpacity={0.5} />
+        </linearGradient>
+      </defs>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={barHeight}
+        fill={`url(#bar-grad-${x})`}
+        rx={radius}
+        ry={radius}
+      />
+    </g>
+  )
+}
+
+function AchievementLabel(props) {
+  const { x, y, width, value, index, data } = props
+  if (!data || !data[index]) return null
+  const real = parseFloat(data[index].Real) || 0
+  const meta = parseFloat(data[index].Meta) || 0
+  const pct = meta > 0 ? (real / meta) * 100 : 0
+  const color = pct >= 100 ? '#22c55e' : pct >= 80 ? '#facc15' : '#ef4444'
+
+  return (
+    <g>
+      <text x={x + width / 2} y={y - 18} textAnchor="middle" fill="#fff" fontSize={11} fontWeight={600}>
+        {formatNumber(value)}
+      </text>
+      {meta > 0 && (
+        <text x={x + width / 2} y={y - 5} textAnchor="middle" fill={color} fontSize={10} fontWeight={700}>
+          {truncTo(pct, 0)}%
+        </text>
+      )}
+    </g>
+  )
+}
+
+export function ProjectionComboChart({ data, color = '#22c55e', height = 300, xKey = 'mes', scale = 'linear', expanded = false }) {
+  if (!data?.length) return <NoData />
+  const h = expanded ? 500 : height
+  const chartData = scale === 'log' ? sanitizeForLog(data, ['Real', 'Meta']) : data
+
+  const allVals = data.flatMap(d => [parseFloat(d.Real), parseFloat(d.Meta)]).filter(v => isFinite(v) && v > 0)
+  const dataMin = allVals.length > 0 ? Math.min(...allVals) : 0
+  const dataMax = allVals.length > 0 ? Math.max(...allVals) : 100
+  const padding = (dataMax - dataMin) * 0.15 || dataMax * 0.1
+  const domain = scale === 'log' ? [1, 'auto'] : [Math.max(0, Math.floor(dataMin - padding)), Math.ceil(dataMax + padding)]
+
+  return (
+    <ResponsiveContainer width="100%" height={h}>
+      <ComposedChart data={chartData} margin={{ top: 40, right: 24, left: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.08)" />
+        <XAxis dataKey={xKey} tickFormatter={formatMonthShort} stroke="rgba(255,255,255,0.5)" tickLine={false} axisLine={false} fontSize={11} />
+        <YAxis
+          scale={scale === 'log' ? 'log' : 'auto'}
+          domain={domain}
+          tickFormatter={formatNumber}
+          stroke="rgba(255,255,255,0.5)"
+          tickLine={false}
+          axisLine={false}
+          width={55}
+          fontSize={11}
+        />
+        <Tooltip content={<ProjectionTooltip labelFormatter={formatMonthShort} />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+        <Legend
+          wrapperStyle={{ fontSize: 12, color: 'rgba(255,255,255,0.75)', paddingTop: 8 }}
+          payload={[
+            { value: 'Real', type: 'rect', color: '#22c55e' },
+            { value: 'Meta', type: 'line', color: '#facc15' },
+          ]}
+        />
+        <Bar
+          dataKey="Real"
+          name="Real"
+          maxBarSize={52}
+          shape={<AchievementBar />}
+          isAnimationActive
+          animationDuration={800}
+        >
+          <LabelList
+            dataKey="Real"
+            position="top"
+            content={<AchievementLabel data={chartData} />}
+          />
+        </Bar>
+        <Line
+          type="monotone"
+          dataKey="Meta"
+          name="Meta"
+          stroke="#facc15"
+          strokeWidth={2.5}
+          strokeDasharray="8 4"
+          dot={{ r: 4, fill: '#facc15', strokeWidth: 0 }}
+          activeDot={{ r: 7, strokeWidth: 2, stroke: '#facc15', fill: '#0a0a0a' }}
+          isAnimationActive
+          animationDuration={1000}
+        >
+          <LabelList
+            dataKey="Meta"
+            position="bottom"
+            formatter={formatNumber}
+            style={{ fill: '#facc15', fontSize: 10, fontWeight: 600 }}
+          />
+        </Line>
+      </ComposedChart>
     </ResponsiveContainer>
   )
 }
