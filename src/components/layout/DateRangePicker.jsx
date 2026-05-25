@@ -166,7 +166,7 @@ export function DateRangePicker({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.96 }}
             transition={{ duration: 0.2 }}
-            className="absolute right-0 top-full mt-2 z-50 glass-strong rounded-2xl border border-white/10 shadow-2xl overflow-hidden"
+            className="absolute right-0 top-full mt-2 z-50 glass-dropdown rounded-2xl border border-white/10 shadow-2xl overflow-hidden"
             style={{ minWidth: 320 }}
           >
             {/* Tabs */}
