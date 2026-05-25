@@ -70,8 +70,8 @@ export function Overview({ data, historical, selectedMonth, loading, theme, feat
   }
   const investmentData = [
     { name: 'Facebook',  value: campByPlat['facebook'] || 0, color: '#3b82f6' },
-    { name: 'Instagram', value: campByPlat['instagram'] || 0, color: '#ec4899' },
-    { name: 'TikTok',    value: campByPlat['tiktok'] || 0, color: '#22d3ee' },
+    { name: 'Instagram', value: campByPlat['instagram'] || 0, color: '#f97316' },
+    { name: 'TikTok',    value: campByPlat['tiktok'] || 0, color: '#a855f7' },
     ...(showGoogleAds ? [{
       name: 'Google Ads',
       value: gadsInversion,
@@ -116,8 +116,8 @@ export function Overview({ data, historical, selectedMonth, loading, theme, feat
               expanded={expanded}
               lines={[
                 { key: 'Facebook',  name: 'Facebook',  color: '#3b82f6' },
-                { key: 'Instagram', name: 'Instagram', color: '#ec4899' },
-                { key: 'TikTok',    name: 'TikTok',    color: '#22d3ee' },
+                { key: 'Instagram', name: 'Instagram', color: '#f97316' },
+                { key: 'TikTok',    name: 'TikTok',    color: '#a855f7' },
               ]}
             />
           )}
