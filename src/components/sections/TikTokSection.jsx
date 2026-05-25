@@ -42,7 +42,7 @@ export function TikTokSection({
   const prevEngagement = prevData ? (Math.floor(safeNumber(prevData.engagement_rate) * 10000) / 100) : null
 
   const trendData = (historical || [])
-    .filter(r => r.mes)
+    .filter(r => r.mes && (!activeMonth || r.mes <= activeMonth))
     .sort((a, b) => String(a.mes).localeCompare(String(b.mes)))
     .slice(-6)
     .map(r => ({
