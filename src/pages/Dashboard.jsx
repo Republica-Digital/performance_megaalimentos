@@ -320,6 +320,8 @@ export function Dashboard() {
                 showProyecciones ? (
                   <ProyeccionesSection
                     data={filteredData.proyecciones || []}
+                    allData={data.proyecciones || []}
+                    selectedMonth={effectiveMonth}
                     campanas={filteredData.campanas}
                     observaciones={filteredData.observaciones?.filter(o => o.seccion === 'proyecciones')}
                     loading={loading}
