@@ -37,7 +37,7 @@ function getGroups(rows) {
   }
   const order = ['mensual', ...([...seen.keys()].filter(k => k !== 'mensual').sort())]
   return order.filter(k => seen.has(k)).map(k => ({
-    key,
+    key: k,
     label: bucketToLabel(k, seen.get(k)),
   }))
 }
@@ -444,7 +444,7 @@ function PlatformCard({ platform, allRows, selectedMonth, syncedObjective, onObj
     >
       {/* Platform header */}
       <div
-        className="flex items-center gap-3 px-5 py-4 border-b border-white/8"
+        className="flex items-center gap-3 px-5 py-4 border-b border-white/10"
         style={{ background: `${color}12` }}
       >
         <div
@@ -523,7 +523,7 @@ function ProyeccionesSkeleton() {
     <div className="space-y-4">
       {[...Array(3)].map((_, i) => (
         <div key={i} className="glass-card rounded-2xl overflow-hidden">
-          <div className="flex items-center gap-3 px-5 py-4 border-b border-white/8">
+          <div className="flex items-center gap-3 px-5 py-4 border-b border-white/10">
             <div className="w-9 h-9 rounded-xl skeleton" />
             <div className="flex-1 space-y-1.5">
               <div className="h-3.5 w-28 rounded skeleton" />
