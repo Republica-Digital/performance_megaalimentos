@@ -385,36 +385,45 @@ function PlatformCard({ platform, allRows, selectedMonth, syncedObjective, onObj
     }
   }, [groups, selectedGroup])
 
+  // ── FIX: reset localObjective whenever the group changes so objectives
+  //    from the previous group don't bleed into the newly selected group.
+  const handleGroupChange = useCallback((newGroup) => {
+    setSelectedGroup(newGroup)
+    setLocalObjective(null)
+  }, [])
+
   // Rows for selected group (all months)
   const groupRows = useMemo(
     () => platRows.filter(r => tipoCampanaToBucket(r.tipo_campana || 'AON') === selectedGroup),
     [platRows, selectedGroup]
   )
 
-  // Available objectives in this group
+  // Helper: consistent objective key per row — always prefer r.objetivo,
+  // fall back to r.metrica. Both lookup and filtering use this same fn.
+  const rowObjectiveKey = useCallback((r) => r.objetivo || r.metrica || '', [])
+
+  // Available objectives strictly within the current group
   const objectives = useMemo(() => {
     const seen = new Set()
     return groupRows
-      .map(r => r.objetivo || r.metrica || '')
+      .map(rowObjectiveKey)
       .filter(o => o && !seen.has(o) && seen.add(o))
-  }, [groupRows])
+  }, [groupRows, rowObjectiveKey])
 
-  // Resolve active objective: synced (if valid) > local > first available
+  // Resolve active objective: synced (if valid in THIS group) > local (if valid in THIS group) > first available
   const activeObjective = useMemo(() => {
     if (syncedObjective && objectives.includes(syncedObjective)) return syncedObjective
-    if (localObjective && objectives.includes(localObjective)) return localObjective
+    if (localObjective  && objectives.includes(localObjective))  return localObjective
     return objectives[0] || null
   }, [syncedObjective, localObjective, objectives])
 
   const syncedButUnavailable = syncedObjective && !objectives.includes(syncedObjective)
 
-  // Metrics for active objective
+  // Metrics strictly for the active objective within the current group
   const metrics = useMemo(() => {
     if (!activeObjective) return []
-    const rows = groupRows.filter(r =>
-      (r.objetivo || r.metrica || '') === activeObjective
-    )
-    // Group by metrica
+    const rows = groupRows.filter(r => rowObjectiveKey(r) === activeObjective)
+    // Group by metrica (the leaf-level metric name)
     const map = new Map()
     for (const r of rows) {
       const key = r.metrica || r.objetivo || '—'
@@ -425,7 +434,7 @@ function PlatformCard({ platform, allRows, selectedMonth, syncedObjective, onObj
       key,
       rows: rows.sort((a, b) => String(a.mes).localeCompare(String(b.mes))),
     }))
-  }, [groupRows, activeObjective])
+  }, [groupRows, activeObjective, rowObjectiveKey])
 
   const handleObjectiveChange = (obj) => {
     setLocalObjective(obj)
@@ -468,7 +477,7 @@ function PlatformCard({ platform, allRows, selectedMonth, syncedObjective, onObj
           {groups.length > 1 && (
             <select
               value={selectedGroup}
-              onChange={e => setSelectedGroup(e.target.value)}
+              onChange={e => handleGroupChange(e.target.value)}
               className="proyecciones-select"
               style={{ '--accent': color }}
             >
