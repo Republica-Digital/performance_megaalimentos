@@ -10,7 +10,7 @@ export function Header({
   filterMode, onFilterModeChange, startDate, endDate, onRangeChange,
   minDate, maxDate,
   onRefresh, isRefreshing, presentationMode, setPresentationMode,
-  onExportPDF, onExportExcel, isExporting,
+  onExportPDF, onExportExcel, isExporting, canExport,
 }) {
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const exportRef = useRef(null)
@@ -76,7 +76,8 @@ export function Header({
             <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
           </button>
 
-          {/* Export menu */}
+          {/* Export menu — only in period/month mode */}
+          {canExport && (
           <div className="relative" ref={exportRef}>
             <button
               onClick={() => setExportMenuOpen(!exportMenuOpen)}
@@ -111,6 +112,7 @@ export function Header({
               )}
             </AnimatePresence>
           </div>
+          )}
 
           {/* Fullscreen */}
           <button
