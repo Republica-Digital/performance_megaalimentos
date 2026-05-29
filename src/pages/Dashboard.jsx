@@ -104,28 +104,48 @@ export function Dashboard() {
     [filteredData.campanas]
   )
 
-  // PDF & Excel export
+  // PDF & Excel export — only available in month/period mode
+  const canExport = filterMode === 'month'
+
   const handleExportPDF = useCallback(async () => {
+    if (!canExport) return
     setExportStatus('Generando PDF…')
     try {
-      await exportDashboardPDF(brandConfig, filteredData, theme)
+      await exportDashboardPDF({
+        brandConfig,
+        filteredData,
+        allData: data,
+        selectedMonth,
+        features,
+        onProgress: (step, total, label) => {
+          setExportStatus(`Generando PDF… ${label} (${step}/${total})`)
+        },
+      })
       setExportStatus(null)
-    } catch {
-      setExportStatus('Error al exportar')
+    } catch (err) {
+      console.error('PDF export error:', err)
+      setExportStatus('Error al exportar PDF')
       setTimeout(() => setExportStatus(null), 3000)
     }
-  }, [brandConfig, filteredData, theme])
+  }, [canExport, brandConfig, filteredData, data, selectedMonth, features])
 
   const handleExportExcel = useCallback(async () => {
+    if (!canExport) return
     setExportStatus('Generando Excel…')
     try {
-      await exportDashboardData(brandConfig, filteredData)
+      await exportDashboardData({
+        brandConfig,
+        filteredData,
+        allData: data,
+        selectedMonth,
+      })
       setExportStatus(null)
-    } catch {
-      setExportStatus('Error al exportar')
+    } catch (err) {
+      console.error('Excel export error:', err)
+      setExportStatus('Error al exportar Excel')
       setTimeout(() => setExportStatus(null), 3000)
     }
-  }, [brandConfig, filteredData])
+  }, [canExport, brandConfig, filteredData, data, selectedMonth])
 
   const handleRangeChange = useCallback((s, e) => {
     setStartDate(s)
@@ -203,6 +223,7 @@ export function Dashboard() {
             onExportPDF={handleExportPDF}
             onExportExcel={handleExportExcel}
             isExporting={!!exportStatus}
+            canExport={canExport}
           />
 
           {/* Range mode indicator */}
