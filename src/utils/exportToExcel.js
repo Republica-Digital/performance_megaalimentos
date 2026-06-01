@@ -259,87 +259,296 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
       row.getCell(1).alignment = { vertical: 'middle', indent: 1 }
     })
 
-    // ─ Campañas ─────────────────────────────────────────────────────────────
-    // Usa la misma normalización que el dashboard (SocialSection):
-    //   normPlat(c._platform || c.plataforma) para filtrar por plataforma
-    //   c._bucket || tipoCampanaToBucket(c.tipo_campana) para el bucket
-    //   resultados/metas vienen de proyecciones (r.real, r.meta)
+    // ─ PAID MEDIA ─ lógica idéntica a SocialSection.jsx del dashboard ────────
+    // Funciones portadas 1:1 desde SocialSection:
+    //   campanaInversion, buildObjectiveInversionMap,
+    //   buildPlatformObjectiveInversionMap, buildPlatformCPRMeta, getGroupCPRMeta
+    //   metricTotals, platformCPRs, groupRows
+
     const normPlat = s => String(s || '').toLowerCase().trim()
     const normKey  = s => String(s || '').toLowerCase().trim()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    const isCPM = m => { const k = normKey(m || ''); return k.includes('alcance') || k.includes('reach') }
+    const isCPV = m => { const k = normKey(m || ''); return k.includes('view') || k.includes('thruplay') }
 
+    // 1. Campañas de esta plataforma  (usa _platform igual que el dashboard)
     const camps = (filteredData.campanas || []).filter(c =>
       normPlat(c._platform || c.plataforma) === plat
     )
-    const proyP = (filteredData.proyecciones || []).filter(p =>
+
+    // 2. Proyecciones de esta plataforma y mes seleccionado
+    const platProy = (filteredData.proyecciones || []).filter(p =>
       normPlat(p.plataforma) === plat
     )
 
-    // ── Inversión por bucket (igual que campanaInversion del dashboard) ──
-    const invByBucket = {}
-    for (const c of camps) {
-      const b = c._bucket || tipoCampanaToBucket(c.tipo_campana)
-      invByBucket[b] = (invByBucket[b] || 0) + v(c.inversion)
+    // 3. Proyecciones mes anterior (para variación)
+    const prevPlatProy = (Array.isArray(allData?.proyecciones) ? allData.proyecciones : []).filter(p =>
+      normPlat(p.plataforma) === plat && p.mes === mesAnt
+    )
+
+    // 4. campanaInversion — igual que el dashboard
+    const campanaInversion = (platform, bucket) =>
+      camps
+        .filter(c => {
+          const cBucket = c._bucket || tipoCampanaToBucket(c.tipo_campana)
+          return bucket === null || cBucket === bucket
+        })
+        .reduce((a, c) => a + v(c.inversion), 0)
+
+    const inversionTotal = campanaInversion(plat, null)
+
+    // 5. buildObjectiveInversionMap — igual que el dashboard
+    const buildObjectiveInversionMap = (bucket) => {
+      const map = {}
+      camps
+        .filter(c => {
+          const cBucket = c._bucket || tipoCampanaToBucket(c.tipo_campana)
+          return cBucket === bucket
+        })
+        .forEach(c => {
+          const key = normKey(c._objective || c.objetivo_detectado || c.objetivo || '')
+          if (!key) return
+          map[key] = (map[key] || 0) + v(c.inversion)
+        })
+      return map
     }
 
-    // ── Inversión por bucket+objetivo (igual que buildObjectiveInversionMap) ──
-    const invByBucketObj = {}
-    for (const c of camps) {
-      const b   = c._bucket || tipoCampanaToBucket(c.tipo_campana)
+    // 6. buildPlatformObjectiveInversionMap — igual que el dashboard
+    const platObjInvMap = {}
+    camps.forEach(c => {
       const key = normKey(c._objective || c.objetivo_detectado || c.objetivo || '')
-      const k   = `${b}||${key}`
-      invByBucketObj[k] = (invByBucketObj[k] || 0) + v(c.inversion)
+      if (!key) return
+      platObjInvMap[key] = (platObjInvMap[key] || 0) + v(c.inversion)
+    })
+
+    // 7. metricTotals — igual que el dashboard
+    const metricTotalsMap = {}
+    for (const p of platProy) {
+      const key = normKey(p.metrica || p.objetivo || '')
+      if (!key) continue
+      if (!metricTotalsMap[key]) metricTotalsMap[key] = { metrica: p.metrica || p.objetivo, resultado: 0, meta: 0 }
+      metricTotalsMap[key].resultado += v(p.real)
+      metricTotalsMap[key].meta      += v(p.meta)
+    }
+    const metricTotals = Object.values(metricTotalsMap)
+      .filter(m => m.resultado > 0)
+      .sort((a, b) => b.resultado - a.resultado)
+
+    // 8. prevMetricMap — igual que el dashboard
+    const prevMetricMap = {}
+    for (const p of prevPlatProy) {
+      const key = normKey(p.metrica || p.objetivo || '')
+      if (!key) continue
+      prevMetricMap[key] = (prevMetricMap[key] || 0) + v(p.real)
     }
 
-    // ── Resultado/meta desde proyecciones (igual que metricTotals del dashboard) ──
-    const bMap = new Map()
-    for (const p of proyP) {
-      const b   = tipoCampanaToBucket(p.tipo_campana || 'AON')
-      const o   = p.metrica || p.objetivo || 'Sin objetivo'
-      const oKey = normKey(o)
-      const k   = `${b}||${oKey}`
-      if (!bMap.has(k)) bMap.set(k, { b, o, res: 0, meta: 0, inv: 0 })
-      const e   = bMap.get(k)
-      e.res    += v(p.real)
-      e.meta   += v(p.meta)
-      // Buscar inversión: primero bucket+objetivo, luego solo bucket
-      const inv = invByBucketObj[k] || 0
-      e.inv     = invByBucket[b] || inv
+    // 9. metricToObj / objToMetric — igual que el dashboard
+    const metricToObj = {}
+    const objToMetric = {}
+    for (const p of platProy) {
+      const mk = normKey(p.metrica  || '')
+      const ok = normKey(p.objetivo || '')
+      if (mk && ok) { metricToObj[mk] = ok; objToMetric[ok] = mk }
     }
 
-    // Si hay campañas con buckets que no tienen proyección, agregarlas igual
-    for (const c of camps) {
-      const b    = c._bucket || tipoCampanaToBucket(c.tipo_campana)
-      const o    = c._objective || c.objetivo_detectado || c.objetivo || 'Sin objetivo'
-      const oKey = normKey(o)
-      const k    = `${b}||${oKey}`
-      if (!bMap.has(k)) {
-        bMap.set(k, { b, o, res: v(c.resultado), meta: 0, inv: invByBucket[b] || 0 })
+    // 10. platformCPRs — igual que el dashboard
+    const platformCPRs = metricTotals.map(m => {
+      const key    = normKey(m.metrica || '')
+      const altKey = metricToObj[key] || objToMetric[key]
+      const inv    = platObjInvMap[key] || (altKey ? platObjInvMap[altKey] : 0) || 0
+      const cpr    = m.resultado > 0
+        ? isCPM(m.metrica) ? (inv / m.resultado) * 1000 : inv / m.resultado
+        : 0
+      return { metrica: m.metrica, key, cpr, inv }
+    }).filter(c => c.cpr > 0)
+
+    // 11. getGroupCPRMeta — igual que el dashboard
+    const getGroupCPRMeta = (bucket, objKey) => {
+      const rows = platProy.filter(p =>
+        tipoCampanaToBucket(p.tipo_campana || 'AON') === bucket &&
+        normKey(p.objetivo || p.metrica || '') === objKey
+      )
+      for (const p of rows) {
+        const cpr = v(p.cpr_meta)
+        if (cpr > 0) return cpr
       }
+      return null
     }
 
-    if (bMap.size > 0) {
+    // 12. buildPlatformCPRMeta — igual que el dashboard
+    const platCPRMetaMap = {}
+    for (const p of platProy) {
+      const cpr = v(p.cpr_meta)
+      if (cpr <= 0) continue
+      const key = normKey(p.objetivo || p.metrica || '')
+      if (!key) continue
+      if (!platCPRMetaMap[key]) platCPRMetaMap[key] = { sum: 0, count: 0 }
+      platCPRMetaMap[key].sum   += cpr
+      platCPRMetaMap[key].count += 1
+    }
+    const platCPRMeta = {}
+    for (const [k, val] of Object.entries(platCPRMetaMap)) {
+      platCPRMeta[k] = val.count > 0 ? val.sum / val.count : 0
+    }
+
+    // 13. Buckets disponibles — igual que getGroups() del dashboard
+    const bucketsSeen = new Map()
+    for (const p of platProy) {
+      const tipo = p.tipo_campana || 'AON'
+      const key  = tipoCampanaToBucket(tipo)
+      if (!bucketsSeen.has(key)) bucketsSeen.set(key, tipo)
+    }
+    const order   = ['mensual', ...[...bucketsSeen.keys()].filter(k => k !== 'mensual').sort()]
+    const buckets = order
+      .filter(k => bucketsSeen.has(k))
+      .map(k => ({ key: k, label: bucketToLabel(k, bucketsSeen.get(k)) }))
+
+    const hasPaidMedia = inversionTotal > 0 || platProy.length > 0
+
+    if (hasPaidMedia) {
       addBlank(ws)
-      r = ws.addRow(['CAMPAÑAS POR BUCKET'])
-      applySubtitle(ws, r, 7, accent)
-      r = ws.addRow(['Bucket', 'Objetivo', 'Resultado', 'Meta', 'Cumplimiento', 'Inversión', 'CPR'])
-      applyHeader(r, 7, DARK_BG)
-      let ci = 0
-      for (const e of bMap.values()) {
-        const cumpl = e.meta > 0 ? e.res / e.meta : null
-        const cpr   = e.res  > 0 ? e.inv / e.res  : null
-        const row   = ws.addRow([bucketToLabel(e.b, e.b), e.o, e.res, e.meta || 0, '', e.inv, cpr || 0])
-        applyBody(row, 7, ci % 2 === 1)
-        row.getCell(3).numFmt  = '#,##0'
-        row.getCell(4).numFmt  = '#,##0'
-        if (!e.meta) row.getCell(4).value = '—'
-        cumplCell(row.getCell(5), cumpl)
-        row.getCell(6).numFmt  = '$#,##0.00'
-        if (cpr) row.getCell(7).numFmt = '$#,##0.00'
-        else row.getCell(7).value = '—'
-        row.getCell(1).alignment = { vertical: 'middle', indent: 1 }
-        ci++
+      r = ws.addRow(['PAID MEDIA'])
+      applySubtitle(ws, r, 9, accent)
+
+      // ── A. TOTALES DEL MES (igual que "Totales del mes" del dashboard) ──────
+      if (inversionTotal > 0 || metricTotals.length > 0) {
+        addBlank(ws)
+        r = ws.addRow(['TOTALES DEL MES'])
+        applySubtitle(ws, r, 9, 'F59E0B')
+        r = ws.addRow(['Métrica', 'Resultado', 'Meta', 'Cumpl.', 'vs Mes Ant.', 'Inversión', 'CPR', 'CPR vs Meta', ''])
+        applyHeader(r, 8, DARK_BG)
+
+        if (inversionTotal > 0) {
+          const row = ws.addRow(['Inversión Total', '—', '—', '—', '—', inversionTotal, '—', '—'])
+          applyBody(row, 8, false)
+          row.getCell(1).font  = font({ bold: true, color: { argb: 'F59E0B' } })
+          row.getCell(6).numFmt = '$#,##0.00'
+          row.getCell(6).font  = font({ bold: true, color: { argb: 'F59E0B' } })
+          row.getCell(1).alignment = { indent: 1, vertical: 'middle' }
+        }
+
+        metricTotals.forEach((m, i) => {
+          const key    = normKey(m.metrica || '')
+          const altKey = metricToObj[key] || objToMetric[key]
+          const inv    = platObjInvMap[key] || (altKey ? platObjInvMap[altKey] : 0) || 0
+          const cpr    = m.resultado > 0 ? (isCPM(m.metrica) ? (inv / m.resultado) * 1000 : inv / m.resultado) : null
+          const cumpl  = m.meta > 0 ? m.resultado / m.meta : null
+          const prevVal = prevMetricMap[key] || 0
+          const vsAnt   = prevVal > 0 ? m.resultado / prevVal - 1 : null
+
+          // CPR vs Meta: si CPR real < meta → bueno (positivo), igual que el dashboard
+          const cprMeta    = platCPRMeta[key] || platCPRMeta[altKey] || null
+          const cprVsMeta  = (cpr && cprMeta) ? (cprMeta - cpr) / cprMeta : null
+
+          const cprLabel = isCPM(m.metrica) ? 'CPM (×1k)' : isCPV(m.metrica) ? 'CPV' : 'CPR'
+
+          const row = ws.addRow([
+            m.metrica,
+            m.resultado,
+            m.meta > 0 ? m.meta : '—',
+            '',
+            vsAnt !== null ? vsAnt : '—',
+            inv > 0 ? inv : '—',
+            cpr   || '—',
+            cprVsMeta !== null ? cprVsMeta : '—',
+          ])
+          applyBody(row, 8, i % 2 === 1)
+          row.getCell(2).numFmt = '#,##0'
+          if (m.meta > 0) row.getCell(3).numFmt = '#,##0'
+          cumplCell(row.getCell(4), cumpl)
+          if (vsAnt !== null) deltaCell(row.getCell(5), vsAnt)
+          if (inv > 0) row.getCell(6).numFmt = '$#,##0.00'
+          if (cpr) row.getCell(7).numFmt = isCPM(m.metrica) ? '$#,##0.000' : '$#,##0.00'
+          if (cprVsMeta !== null) {
+            row.getCell(8).numFmt = '+0.0%;-0.0%'
+            row.getCell(8).font  = font({ bold: true, color: { argb: cprVsMeta >= 0 ? '16A34A' : 'DC2626' } })
+          }
+          row.getCell(1).alignment = { indent: 1, vertical: 'middle' }
+        })
+      }
+
+      // ── B. DESGLOSE POR GRUPO (igual que "Desglose por grupo" del dashboard) ─
+      for (const { key: bucketKey, label: bucketLbl } of buckets) {
+        const groupRows = platProy
+          .filter(p => tipoCampanaToBucket(p.tipo_campana || 'AON') === bucketKey)
+          .sort((a, b) => v(b.real) - v(a.real))
+
+        const groupInv    = campanaInversion(plat, bucketKey)
+        const objInvMap   = buildObjectiveInversionMap(bucketKey)
+
+        if (groupRows.length === 0 && groupInv === 0) continue
+
+        addBlank(ws)
+        r = ws.addRow([`GRUPO: ${bucketLbl.toUpperCase()}`])
+        applySubtitle(ws, r, 9, accent)
+
+        if (groupInv > 0) {
+          const invRow = ws.addRow([`Inversión — ${bucketLbl}`, groupInv, '', '', '', '', '', ''])
+          applyBody(invRow, 2, false)
+          invRow.getCell(1).font  = font({ bold: true, color: { argb: 'F59E0B' } })
+          invRow.getCell(2).numFmt = '$#,##0.00'
+          invRow.getCell(2).font  = font({ bold: true, color: { argb: 'F59E0B' } })
+          invRow.getCell(1).alignment = { indent: 1, vertical: 'middle' }
+        }
+
+        if (groupRows.length > 0) {
+          r = ws.addRow(['Objetivo', 'Métrica', 'Resultado', 'Meta', 'vs Meta', 'Inversión', 'CPR', 'CPR vs Meta', ''])
+          applyHeader(r, 8, DARK_BG)
+
+          groupRows.forEach((p, i) => {
+            const objKey    = normKey(p.objetivo || '')
+            const metricKey = normKey(p.metrica  || p.objetivo || '')
+
+            // Inversión: primero por objetivo, luego por métrica (igual que el dashboard)
+            const inv = objInvMap[objKey] || objInvMap[metricKey] || 0
+
+            const real    = v(p.real)
+            const meta    = v(p.meta)
+            const vsMeta  = meta > 0 ? real / meta - 1 : null
+
+            // CPR igual que el dashboard: CPM si es alcance, sino división directa
+            const cpr = (inv > 0 && real > 0)
+              ? isCPM(p.metrica || p.objetivo) ? (inv / real) * 1000 : inv / real
+              : null
+
+            // CPR Meta: lee cpr_meta de la fila exacta (getGroupCPRMeta del dashboard)
+            const cprMetaVal = getGroupCPRMeta(bucketKey, metricKey)
+                            || getGroupCPRMeta(bucketKey, objKey)
+
+            // Variación CPR: si CPR real < meta → bueno (positivo), igual que el dashboard
+            const cprVsMeta = (cpr && cprMetaVal) ? (cprMetaVal - cpr) / cprMetaVal : null
+
+            const row = ws.addRow([
+              p.objetivo || '—',
+              p.metrica  || '—',
+              real,
+              meta > 0 ? meta : '—',
+              vsMeta !== null ? vsMeta : '—',
+              inv  > 0 ? inv  : '—',
+              cpr        || '—',
+              cprVsMeta !== null ? cprVsMeta : '—',
+            ])
+            applyBody(row, 8, i % 2 === 1)
+            row.getCell(3).numFmt = '#,##0'
+            if (meta > 0) row.getCell(4).numFmt = '#,##0'
+            if (vsMeta !== null) {
+              row.getCell(5).numFmt = '+0.0%;-0.0%'
+              row.getCell(5).font  = font({ bold: true, color: { argb: vsMeta >= 0 ? '16A34A' : 'DC2626' } })
+            }
+            if (inv > 0) row.getCell(6).numFmt = '$#,##0.00'
+            if (cpr) row.getCell(7).numFmt = isCPM(p.metrica || p.objetivo) ? '$#,##0.000' : '$#,##0.00'
+            if (cprVsMeta !== null) {
+              row.getCell(8).numFmt = '+0.0%;-0.0%'
+              row.getCell(8).font  = font({ bold: true, color: { argb: cprVsMeta >= 0 ? '16A34A' : 'DC2626' } })
+            }
+            row.getCell(1).alignment = { indent: 1, vertical: 'middle' }
+            row.getCell(2).alignment = { indent: 1, vertical: 'middle' }
+          })
+        }
       }
     }
+
+    // ─ Histórico mensual    }
 
     // ─ Histórico mensual ─────────────────────────────────────────────────────
     if (histMonths.length > 1) {
