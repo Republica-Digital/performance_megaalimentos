@@ -260,23 +260,61 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
     })
 
     // ─ Campañas ─────────────────────────────────────────────────────────────
-    const camps = (filteredData.campanas || []).filter(c => c.plataforma === plat)
-    const proyP = (filteredData.proyecciones || []).filter(p => p.plataforma === plat)
-    const bMap  = new Map()
+    // Usa la misma normalización que el dashboard (SocialSection):
+    //   normPlat(c._platform || c.plataforma) para filtrar por plataforma
+    //   c._bucket || tipoCampanaToBucket(c.tipo_campana) para el bucket
+    //   resultados/metas vienen de proyecciones (r.real, r.meta)
+    const normPlat = s => String(s || '').toLowerCase().trim()
+    const normKey  = s => String(s || '').toLowerCase().trim()
+
+    const camps = (filteredData.campanas || []).filter(c =>
+      normPlat(c._platform || c.plataforma) === plat
+    )
+    const proyP = (filteredData.proyecciones || []).filter(p =>
+      normPlat(p.plataforma) === plat
+    )
+
+    // ── Inversión por bucket (igual que campanaInversion del dashboard) ──
+    const invByBucket = {}
     for (const c of camps) {
       const b = c._bucket || tipoCampanaToBucket(c.tipo_campana)
-      const o = c._objective || c.objetivo_detectado || c.objetivo || 'Sin objetivo'
-      const k = `${b}|${o}`
-      if (!bMap.has(k)) bMap.set(k, { b, o, res: 0, inv: 0, meta: null })
-      const e = bMap.get(k); e.res += v(c.resultado); e.inv += v(c.inversion)
+      invByBucket[b] = (invByBucket[b] || 0) + v(c.inversion)
     }
+
+    // ── Inversión por bucket+objetivo (igual que buildObjectiveInversionMap) ──
+    const invByBucketObj = {}
+    for (const c of camps) {
+      const b   = c._bucket || tipoCampanaToBucket(c.tipo_campana)
+      const key = normKey(c._objective || c.objetivo_detectado || c.objetivo || '')
+      const k   = `${b}||${key}`
+      invByBucketObj[k] = (invByBucketObj[k] || 0) + v(c.inversion)
+    }
+
+    // ── Resultado/meta desde proyecciones (igual que metricTotals del dashboard) ──
+    const bMap = new Map()
     for (const p of proyP) {
-      const b = tipoCampanaToBucket(p.tipo_campana)
-      const o = p.objetivo || p.metrica || 'Sin objetivo'
-      const k = `${b}|${o}`
-      if (!bMap.has(k)) bMap.set(k, { b, o, res: 0, inv: 0, meta: null })
-      const e = bMap.get(k); e.meta = v(p.meta)
-      if (e.res === 0) e.res = v(p.real)
+      const b   = tipoCampanaToBucket(p.tipo_campana || 'AON')
+      const o   = p.metrica || p.objetivo || 'Sin objetivo'
+      const oKey = normKey(o)
+      const k   = `${b}||${oKey}`
+      if (!bMap.has(k)) bMap.set(k, { b, o, res: 0, meta: 0, inv: 0 })
+      const e   = bMap.get(k)
+      e.res    += v(p.real)
+      e.meta   += v(p.meta)
+      // Buscar inversión: primero bucket+objetivo, luego solo bucket
+      const inv = invByBucketObj[k] || 0
+      e.inv     = invByBucket[b] || inv
+    }
+
+    // Si hay campañas con buckets que no tienen proyección, agregarlas igual
+    for (const c of camps) {
+      const b    = c._bucket || tipoCampanaToBucket(c.tipo_campana)
+      const o    = c._objective || c.objetivo_detectado || c.objetivo || 'Sin objetivo'
+      const oKey = normKey(o)
+      const k    = `${b}||${oKey}`
+      if (!bMap.has(k)) {
+        bMap.set(k, { b, o, res: v(c.resultado), meta: 0, inv: invByBucket[b] || 0 })
+      }
     }
 
     if (bMap.size > 0) {
