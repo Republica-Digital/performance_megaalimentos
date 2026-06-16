@@ -8,7 +8,7 @@ import { TopPostsSection } from '../ui/PostCard'
 import { DataTable } from '../ui/DataTable'
 import { CampaignToggle } from '../ui/CampaignToggle'
 import { safeNumber, formatNumber, formatCurrency, formatDecimal, truncTo, prevMonth, pctChange } from '../../utils/format'
-import { tipoCampanaToBucket, bucketToLabel } from '../../utils/campaigns'
+import { buildCampaignPerformance, getCampaignPlatform, tipoCampanaToBucket, bucketToLabel } from '../../utils/campaigns'
 
 const PLATFORM_CONFIG = {
   facebook:  { icon: Facebook,  accent: '#3b82f6', label: 'Facebook' },
@@ -56,7 +56,7 @@ function getGroups(rows) {
 function campanaInversion(campanas, platform, bucket) {
   return campanas
     .filter(c => {
-      const cPlat   = normPlat(c._platform || c.plataforma)
+      const cPlat   = getCampaignPlatform(c)
       const cBucket = c._bucket || tipoCampanaToBucket(c.tipo_campana)
       return cPlat === platform && (bucket === null || cBucket === bucket)
     })
@@ -69,7 +69,7 @@ function buildObjectiveInversionMap(campanas, platform, bucket) {
   const map = {}
   campanas
     .filter(c => {
-      const cPlat   = normPlat(c._platform || c.plataforma)
+      const cPlat   = getCampaignPlatform(c)
       const cBucket = c._bucket || tipoCampanaToBucket(c.tipo_campana)
       return cPlat === platform && cBucket === bucket
     })
@@ -85,7 +85,7 @@ function buildObjectiveInversionMap(campanas, platform, bucket) {
 function buildPlatformObjectiveInversionMap(campanas, platform) {
   const map = {}
   campanas
-    .filter(c => normPlat(c._platform || c.plataforma) === platform)
+    .filter(c => getCampaignPlatform(c) === platform)
     .forEach(c => {
       const key = normKey(c._objective || c.objetivo_detectado || c.objetivo || '')
       if (!key) return
@@ -152,6 +152,17 @@ const cprLabel = (metrica) => {
   return `CPR (${capitalize(metrica)})`
 }
 
+function projectionKeys(row) {
+  return [...new Set([row?.objetivo, row?.metrica].map(normKey).filter(Boolean))]
+}
+
+function findCampaignPerformance(performanceMap, row) {
+  for (const key of projectionKeys(row)) {
+    if (performanceMap[key]) return performanceMap[key]
+  }
+  return null
+}
+
 export function PaidMediaSection({ platform, month, campanas, proyecciones, accent }) {
   const [bucket, setBucket] = useState('mensual')
   const [open, setOpen]     = useState(false)
@@ -170,6 +181,10 @@ export function PaidMediaSection({ platform, month, campanas, proyecciones, acce
   )
 
   const inversionTotal = useMemo(() => campanaInversion(campanas, platform, null), [campanas, platform])
+  const platformPerformance = useMemo(
+    () => buildCampaignPerformance(campanas, platform, null),
+    [campanas, platform]
+  )
 
   const groups = useMemo(() => getGroups(platProy), [platProy])
 
@@ -184,27 +199,27 @@ export function PaidMediaSection({ platform, month, campanas, proyecciones, acce
 
   // Totales del mes agrupados por MÉTRICA (no suma única)
   const metricTotals = useMemo(() => {
-    const map = {}
+    const metaByKey = {}
+    const labelByKey = {}
     for (const r of platProy) {
       const key = normKey(r.metrica || r.objetivo || '')
       if (!key) continue
-      if (!map[key]) map[key] = { metrica: r.metrica || r.objetivo, resultado: 0, meta: 0 }
-      map[key].resultado += safeNumber(r.real)
-      map[key].meta += safeNumber(r.meta)
+      metaByKey[key] = (metaByKey[key] || 0) + safeNumber(r.meta)
+      labelByKey[key] = r.metrica || r.objetivo
     }
-    return Object.values(map).filter(m => m.resultado > 0).sort((a, b) => b.resultado - a.resultado)
-  }, [platProy])
+    return Object.entries(platformPerformance)
+      .map(([key, actual]) => ({
+        metrica: labelByKey[key] || actual.metrica || actual.objetivo,
+        resultado: actual.resultado,
+        meta: metaByKey[key] || 0,
+      }))
+      .filter(m => m.resultado > 0)
+      .sort((a, b) => b.resultado - a.resultado)
+  }, [platProy, platformPerformance])
 
   // Previous month totals by metric (for vs anterior badge)
   const prevMetricMap = useMemo(() => {
-    const map = {}
-    for (const r of prevPlatProy) {
-      const key = normKey(r.metrica || r.objetivo || '')
-      if (!key) continue
-      if (!map[key]) map[key] = 0
-      map[key] += safeNumber(r.real)
-    }
-    return map
+    return {}
   }, [prevPlatProy])
 
   // ── Mapa inversión por objetivo a nivel plataforma (todos los grupos) ──
@@ -225,15 +240,6 @@ export function PaidMediaSection({ platform, month, campanas, proyecciones, acce
       if (mk && ok) { metricToObj[mk] = ok; objToMetric[ok] = mk }
     }
 
-    // DEBUG — remove after verifying
-    console.group(`🔍 CPR Debug [${platform}]`)
-    console.log('platObjInvMap keys (from Campañas):', Object.keys(platObjInvMap))
-    console.log('metricTotals keys (from Proyecciones):', metricTotals.map(m => normKey(m.metrica || '')))
-    console.log('metricToObj:', metricToObj)
-    console.log('objToMetric:', objToMetric)
-    console.log('platProy raw:', platProy.map(r => ({ metrica: r.metrica, objetivo: r.objetivo, real: r.real, cpr_meta: r.cpr_meta })))
-    console.log('campanas raw:', campanas.filter(c => normPlat(c._platform || c.plataforma) === platform).map(c => ({ objective: c._objective, objetivo: c.objetivo, objetivo_detectado: c.objetivo_detectado, inv: c.inversion })))
-
     const result = metricTotals.map(m => {
       const key = normKey(m.metrica || '')
       // Buscar inversión: primero por key directo, luego por objetivo mapeado
@@ -243,11 +249,9 @@ export function PaidMediaSection({ platform, month, campanas, proyecciones, acce
       const cpr = m.resultado > 0
         ? isCPM(m.metrica) ? (inv / m.resultado) * 1000 : inv / m.resultado
         : 0
-      console.log(`  metric="${key}" altKey="${altKey}" inv=${inv} resultado=${m.resultado} isCPM=${isCPM(m.metrica)} → cpr=${cpr}`)
       return { metrica: m.metrica, key, cpr, inv }
     }).filter(c => c.cpr > 0)
 
-    console.groupEnd()
     return result
   }, [metricTotals, platObjInvMap, platProy, campanas, platform])
 
@@ -257,12 +261,25 @@ export function PaidMediaSection({ platform, month, campanas, proyecciones, acce
     [platProy, platform]
   )
 
+  const groupPerformance = useMemo(
+    () => buildCampaignPerformance(campanas, platform, bucket),
+    [campanas, platform, bucket]
+  )
+
   // Filas del grupo seleccionado
   const groupRows = useMemo(
     () => platProy
       .filter(r => tipoCampanaToBucket(r.tipo_campana || 'AON') === bucket)
-      .sort((a, b) => safeNumber(b.real) - safeNumber(a.real)),
-    [platProy, bucket]
+      .map(r => {
+        const actual = findCampaignPerformance(groupPerformance, r)
+        return {
+          ...r,
+          _realFromCampaign: actual?.resultado || 0,
+          _invFromCampaign: actual?.inversion || 0,
+        }
+      })
+      .sort((a, b) => safeNumber(b._realFromCampaign) - safeNumber(a._realFromCampaign)),
+    [platProy, bucket, groupPerformance]
   )
 
   // Mapa objetivo → inversión para el grupo actual
@@ -404,13 +421,13 @@ export function PaidMediaSection({ platform, month, campanas, proyecciones, acce
                     render: v => <span className="capitalize">{v || '—'}</span> },
                   { key: 'metrica', label: 'Métrica',
                     render: v => <span className="text-white/60 text-xs capitalize">{v || '—'}</span> },
-                  { key: 'real', label: 'Resultado', align: 'right',
+                  { key: '_realFromCampaign', label: 'Resultado', align: 'right',
                     render: v => safeNumber(v) > 0 ? formatNumber(v) : <span className="text-white/30">—</span> },
                   { key: 'meta', label: 'Meta', align: 'right',
                     render: v => safeNumber(v) > 0 ? formatNumber(v) : <span className="text-white/30">—</span> },
                   { key: '_vs', label: 'vs Meta', align: 'right',
                     render: (_, r) => {
-                      const meta = safeNumber(r.meta), real = safeNumber(r.real)
+                      const meta = safeNumber(r.meta), real = safeNumber(r._realFromCampaign)
                       if (!meta || !real) return <span className="text-white/30">—</span>
                       const pct = ((real / meta) - 1) * 100
                       return <span className={pct >= 0 ? 'text-emerald-300' : 'text-red-300'}>
@@ -420,9 +437,7 @@ export function PaidMediaSection({ platform, month, campanas, proyecciones, acce
                   },
                   { key: '_inv', label: 'Inversión', align: 'right',
                     render: (_, r) => {
-                      const objKey = normKey(r.objetivo || '')
-                      const metricKey = normKey(r.metrica || r.objetivo || '')
-                      const inv = objInvMap[objKey] || objInvMap[metricKey]
+                      const inv = safeNumber(r._invFromCampaign)
                       return inv > 0 ? formatCurrency(inv) : <span className="text-white/30">—</span>
                     },
                   },
@@ -430,8 +445,8 @@ export function PaidMediaSection({ platform, month, campanas, proyecciones, acce
                     render: (_, r) => {
                       const metricKey = normKey(r.metrica || r.objetivo || '')
                       const objKey = normKey(r.objetivo || '')
-                      const inv = objInvMap[metricKey] || objInvMap[objKey] || 0
-                      const real = safeNumber(r.real)
+                      const inv = safeNumber(r._invFromCampaign)
+                      const real = safeNumber(r._realFromCampaign)
                       if (!inv || !real) return <span className="text-white/30">—</span>
                       const cpr = isCPM(r.metrica || r.objetivo) ? (inv / real) * 1000 : inv / real
                       return (
@@ -446,8 +461,8 @@ export function PaidMediaSection({ platform, month, campanas, proyecciones, acce
                     render: (_, r) => {
                       const metricKey = normKey(r.metrica || r.objetivo || '')
                       const objKey = normKey(r.objetivo || '')
-                      const inv = objInvMap[metricKey] || objInvMap[objKey] || 0
-                      const real = safeNumber(r.real)
+                      const inv = safeNumber(r._invFromCampaign)
+                      const real = safeNumber(r._realFromCampaign)
                       if (!inv || !real) return <span className="text-white/30">—</span>
                       const cprReal = isCPM(r.metrica || r.objetivo) ? (inv / real) * 1000 : inv / real
                       // Leer CPR meta del sheet (cpr_meta de la fila de proyección de este grupo)

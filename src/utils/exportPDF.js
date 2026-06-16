@@ -1,7 +1,7 @@
 import { jsPDF } from 'jspdf'
 import 'jspdf-autotable'
 import { formatMonthLong, formatMonthShort, safeNumber } from './format'
-import { tipoCampanaToBucket, bucketToLabel } from './campaigns'
+import { getCampaignPlatform, tipoCampanaToBucket, bucketToLabel } from './campaigns'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 const v   = (val) => safeNumber(val, 0)
@@ -429,7 +429,7 @@ export async function exportDashboardPDF({
     // Campañas por bucket con barra de progreso
     const normPlat = s => String(s || '').toLowerCase().trim()
     const normKey  = s => String(s || '').toLowerCase().trim()
-    const camps    = (filteredData.campanas || []).filter(c => normPlat(c._platform || c.plataforma) === pc.key)
+    const camps    = (filteredData.campanas || []).filter(c => getCampaignPlatform(c) === pc.key)
     const proyP    = (filteredData.proyecciones || []).filter(p => normPlat(p.plataforma) === pc.key)
 
     const invByBucket = {}
@@ -444,14 +444,17 @@ export async function exportDashboardPDF({
       const k    = `${b}||${normKey(o)}`
       if (!bMap.has(k)) bMap.set(k, { b, o, res: 0, meta: 0, inv: 0 })
       const e    = bMap.get(k)
-      e.res     += v(p.real); e.meta += v(p.meta)
+      e.meta += v(p.meta)
       e.inv      = invByBucket[b] || 0
     }
     for (const c of camps) {
       const b = c._bucket || tipoCampanaToBucket(c.tipo_campana)
       const o = c._objective || c.objetivo_detectado || c.objetivo || 'Sin objetivo'
       const k = `${b}||${normKey(o)}`
-      if (!bMap.has(k)) bMap.set(k, { b, o, res: v(c.resultado), meta: 0, inv: invByBucket[b] || 0 })
+      if (!bMap.has(k)) bMap.set(k, { b, o, res: 0, meta: 0, inv: invByBucket[b] || 0 })
+      const e = bMap.get(k)
+      e.res += v(c.resultado)
+      e.inv = invByBucket[b] || 0
     }
 
     if (bMap.size > 0) {
@@ -560,12 +563,30 @@ export async function exportDashboardPDF({
       if (!rows.length) continue
       y = checkPB(pdf, y, 55, () => { np(); y = sectionHeader(pdf, 'Proyecciones (cont.)', palette, W, M) })
       y = subHead(pdf, y, plat.charAt(0).toUpperCase() + plat.slice(1), palette, M)
+      const realForProjection = (row) => {
+        const rowBucket = tipoCampanaToBucket(row.tipo_campana || 'AON')
+        const keys = [row.objetivo, row.metrica].map(normKey).filter(Boolean)
+        return (filteredData.campanas || [])
+          .filter(c => getCampaignPlatform(c) === normPlat(plat))
+          .filter(c => (c._bucket || tipoCampanaToBucket(c.tipo_campana)) === rowBucket)
+          .filter(c => keys.includes(normKey(c._objective || c.objetivo_detectado || c.objetivo || '')))
+          .reduce((sum, c) => sum + v(c.resultado), 0)
+      }
+      const invForProjection = (row) => {
+        const rowBucket = tipoCampanaToBucket(row.tipo_campana || 'AON')
+        const keys = [row.objetivo, row.metrica].map(normKey).filter(Boolean)
+        return (filteredData.campanas || [])
+          .filter(c => getCampaignPlatform(c) === normPlat(plat))
+          .filter(c => (c._bucket || tipoCampanaToBucket(c.tipo_campana)) === rowBucket)
+          .filter(c => keys.includes(normKey(c._objective || c.objetivo_detectado || c.objetivo || '')))
+          .reduce((sum, c) => sum + v(c.inversion), 0)
+      }
       y = tbl(pdf, y,
         ['Métrica / Objetivo', 'Tipo', 'Meta', 'Real', 'Cumplimiento', 'Inversión'],
         rows.map(r => {
-          const meta = v(r.meta), real = v(r.real)
+          const meta = v(r.meta), real = realForProjection(r)
           const cumpl = meta > 0 ? `${((real / meta) * 100).toFixed(1)}%` : '—'
-          return [r.metrica || r.objetivo || '—', r.tipo_campana || 'AON', fN(meta), fN(real), cumpl, fC(r.inversion)]
+          return [r.metrica || r.objetivo || '—', r.tipo_campana || 'AON', fN(meta), fN(real), cumpl, fC(invForProjection(r))]
         }),
         {
           headColor: palette.main,
