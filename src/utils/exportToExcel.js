@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs'
 import { formatMonthShort, formatMonthLong, safeNumber } from './format'
-import { tipoCampanaToBucket, bucketToLabel } from './campaigns'
+import { buildCampaignPerformance, getCampaignPlatform, tipoCampanaToBucket, bucketToLabel } from './campaigns'
 
 const v = (val) => safeNumber(val, 0)
 const prevMonth = (m) => {
@@ -273,7 +273,7 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
     const campanaInversion = (bucket) =>
       (filteredData.campanas || [])
         .filter(c => {
-          const cPlat   = normP(c._platform || c.plataforma)
+          const cPlat   = getCampaignPlatform(c)
           const cBucket = c._bucket || tipoCampanaToBucket(c.tipo_campana)
           return cPlat === plat && (bucket === null || cBucket === bucket)
         })
@@ -284,7 +284,7 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
       const map = {}
       ;(filteredData.campanas || [])
         .filter(c => {
-          const cPlat   = normP(c._platform || c.plataforma)
+          const cPlat   = getCampaignPlatform(c)
           const cBucket = c._bucket || tipoCampanaToBucket(c.tipo_campana)
           return cPlat === plat && cBucket === bucket
         })
@@ -300,7 +300,7 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
     const platObjInvMap = (() => {
       const map = {}
       ;(filteredData.campanas || [])
-        .filter(c => normP(c._platform || c.plataforma) === plat)
+        .filter(c => getCampaignPlatform(c) === plat)
         .forEach(c => {
           const key = normK(c._objective || c.objetivo_detectado || c.objetivo || '')
           if (!key) return
@@ -311,6 +311,12 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
 
     // -- Proyecciones de esta plataforma y mes --
     const platProy = (filteredData.proyecciones || []).filter(p => normP(p.plataforma) === plat)
+    const platformPerformance = buildCampaignPerformance(filteredData.campanas || [], plat, null)
+    const findPerformance = (performanceMap, row) => {
+      const keys = [...new Set([row?.objetivo, row?.metrica].map(normK).filter(Boolean))]
+      for (const key of keys) if (performanceMap[key]) return performanceMap[key]
+      return null
+    }
 
     // -- Proyecciones mes anterior --
     const prevPlatProy = (Array.isArray(allData?.proyecciones) ? allData.proyecciones : [])
@@ -333,26 +339,27 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
 
     // -- metricTotals: igual que SocialSection línea 183 --
     const metricTotals = (() => {
-      const map = {}
+      const metaByKey = {}
+      const labelByKey = {}
       for (const r of platProy) {
         const key = normK(r.metrica || r.objetivo || '')
         if (!key) continue
-        if (!map[key]) map[key] = { metrica: r.metrica || r.objetivo, resultado: 0, meta: 0 }
-        map[key].resultado += v(r.real)
-        map[key].meta      += v(r.meta)
+        metaByKey[key] = (metaByKey[key] || 0) + v(r.meta)
+        labelByKey[key] = r.metrica || r.objetivo
       }
-      return Object.values(map).filter(m => m.resultado > 0).sort((a, b) => b.resultado - a.resultado)
+      return Object.entries(platformPerformance)
+        .map(([key, actual]) => ({
+          metrica: labelByKey[key] || actual.metrica || actual.objetivo,
+          resultado: actual.resultado,
+          meta: metaByKey[key] || 0,
+        }))
+        .filter(m => m.resultado > 0)
+        .sort((a, b) => b.resultado - a.resultado)
     })()
 
     // -- prevMetricMap: igual que SocialSection línea 197 --
     const prevMetricMap = (() => {
-      const map = {}
-      for (const r of prevPlatProy) {
-        const key = normK(r.metrica || r.objetivo || '')
-        if (!key) continue
-        map[key] = (map[key] || 0) + v(r.real)
-      }
-      return map
+      return {}
     })()
 
     // -- metricToObj / objToMetric --
@@ -505,9 +512,18 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
 
       // ── C. DESGLOSE POR GRUPO (bucket) ─────────────────────────────────────
       for (const { key: bKey, label: bLabel } of groups) {
+        const groupPerformance = buildCampaignPerformance(filteredData.campanas || [], plat, bKey)
         const groupRows = platProy
           .filter(p => tipoCampanaToBucket(p.tipo_campana || 'AON') === bKey)
-          .sort((a, b) => v(b.real) - v(a.real))
+          .map(p => {
+            const actual = findPerformance(groupPerformance, p)
+            return {
+              ...p,
+              _realFromCampaign: actual?.resultado || 0,
+              _invFromCampaign: actual?.inversion || 0,
+            }
+          })
+          .sort((a, b) => v(b._realFromCampaign) - v(a._realFromCampaign))
 
         const groupInv  = campanaInversion(bKey)
         const objInvMap = buildObjInvMap(bKey)
@@ -537,8 +553,8 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
             const objKey    = normK(p.objetivo || '')
             const metricKey = normK(p.metrica  || p.objetivo || '')
             // Inversión: primero por objetivo, luego por métrica (igual que el dashboard)
-            const inv    = objInvMap[objKey] || objInvMap[metricKey] || 0
-            const real   = v(p.real)
+            const inv    = v(p._invFromCampaign)
+            const real   = v(p._realFromCampaign)
             const meta   = v(p.meta)
             const vsMeta = meta > 0 ? real / meta - 1 : null
             const cpr    = (inv > 0 && real > 0)
@@ -732,6 +748,26 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
     addBlank(ws)
 
     const platsProy = [...new Set(proy.map(p => p.plataforma).filter(Boolean))]
+    const realForProjection = (row) => {
+      const rowPlatform = normP(row.plataforma)
+      const rowBucket = tipoCampanaToBucket(row.tipo_campana || 'AON')
+      const keys = [row.objetivo, row.metrica].map(normK).filter(Boolean)
+      return (filteredData.campanas || [])
+        .filter(c => getCampaignPlatform(c) === rowPlatform)
+        .filter(c => (c._bucket || tipoCampanaToBucket(c.tipo_campana)) === rowBucket)
+        .filter(c => keys.includes(normK(c._objective || c.objetivo_detectado || c.objetivo || '')))
+        .reduce((sum, c) => sum + v(c.resultado), 0)
+    }
+    const invForProjection = (row) => {
+      const rowPlatform = normP(row.plataforma)
+      const rowBucket = tipoCampanaToBucket(row.tipo_campana || 'AON')
+      const keys = [row.objetivo, row.metrica].map(normK).filter(Boolean)
+      return (filteredData.campanas || [])
+        .filter(c => getCampaignPlatform(c) === rowPlatform)
+        .filter(c => (c._bucket || tipoCampanaToBucket(c.tipo_campana)) === rowBucket)
+        .filter(c => keys.includes(normK(c._objective || c.objetivo_detectado || c.objetivo || '')))
+        .reduce((sum, c) => sum + v(c.inversion), 0)
+    }
     for (const plat of platsProy) {
       const rows = proy.filter(p => p.plataforma === plat)
       if (!rows.length) continue
@@ -742,13 +778,14 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
       applyHeader(r, 8, DARK_BG)
 
       rows.forEach((p, i) => {
-        const meta  = v(p.meta), real = v(p.real)
+        const meta  = v(p.meta), real = realForProjection(p)
+        const inv = invForProjection(p)
         const cumpl = meta > 0 ? real / meta : null
         const gap   = meta > 0 ? real - meta : null
-        const cpr   = real > 0 ? v(p.inversion) / real : null
+        const cpr   = real > 0 ? inv / real : null
         const row   = ws.addRow([
           p.metrica || p.objetivo || '—', p.tipo_campana || 'AON',
-          meta, real, '', gap || 0, v(p.inversion), cpr || 0,
+          meta, real, '', gap || 0, inv, cpr || 0,
         ])
         applyBody(row, 8, i % 2 === 1)
         row.getCell(3).numFmt = '#,##0'
@@ -944,8 +981,18 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
       evaluar(`${l} — Interacciones`,  v(act.interacciones),  v(ant.interacciones),   30, true)
       evaluar(`${l} — Inversión`,      v(act.inversion),      v(ant.inversion),       40, false)
     }
+    const alertRealForProjection = (row) => {
+      const rowPlatform = normP(row.plataforma)
+      const rowBucket = tipoCampanaToBucket(row.tipo_campana || 'AON')
+      const keys = [row.objetivo, row.metrica].map(normK).filter(Boolean)
+      return (filteredData.campanas || [])
+        .filter(c => getCampaignPlatform(c) === rowPlatform)
+        .filter(c => (c._bucket || tipoCampanaToBucket(c.tipo_campana)) === rowBucket)
+        .filter(c => keys.includes(normK(c._objective || c.objetivo_detectado || c.objetivo || '')))
+        .reduce((sum, c) => sum + v(c.resultado), 0)
+    }
     for (const p of (filteredData.proyecciones || [])) {
-      const meta = v(p.meta), real = v(p.real)
+      const meta = v(p.meta), real = alertRealForProjection(p)
       if (!meta) continue
       const cumpl = (real / meta) * 100
       const nm    = `${p.metrica || p.objetivo || 'Meta'} — ${p.plataforma}`

@@ -28,6 +28,8 @@ export function tipoCampanaToBucket(tipoCampana) {
   if (s === 'aon' || s === 'mensual') return 'mensual'
   if (s === 'mundial') return 'mundial'
   if (s.replace(/\s+/g, '') === 'palnorte') return 'pal_norte'
+  if (s === 'norte' || s === 'norte y centro') return 'norte_y_centro'
+  if (s === 'pacifico y bajio' || s === 'pacifico y el bajio') return 'pacifico_y_bajio'
   // Any other value → slug
   return s.replace(/\s+/g, '_')
 }
@@ -64,6 +66,17 @@ export function detectPlatformFromName(name, fallbackPlatform) {
     if (fb === 'google') return 'google'
   }
   return fallbackPlatform || null
+}
+
+export function normalizeMetricKey(value) {
+  return stripAccents(value).replace(/\s+/g, ' ')
+}
+
+export function getCampaignPlatform(row) {
+  const fullName = row?.nombre_campana || row?._fullName || ''
+  const fromName = detectPlatformFromName(fullName)
+  if (fromName) return fromName
+  return row?.plataforma ? stripAccents(row.plataforma) : null
 }
 
 // ── Google Ads objective from tipo_objetivo / tipo_red column ──────────────
@@ -103,10 +116,8 @@ export function enrichCampaign(row) {
   const tipoCampana = row.tipo_campana || detectTipoCampanaFromName(fullName)
   const bucket = tipoCampanaToBucket(tipoCampana)
 
-  // Use explicit plataforma if present, else detect from name
-  const platform = row.plataforma
-    ? stripAccents(row.plataforma)
-    : detectPlatformFromName(fullName, row.plataforma)
+  // Campaign names are the safest source when explicit platform values drift.
+  const platform = getCampaignPlatform({ ...row, _fullName: fullName })
 
   // Use explicit objetivo_detectado if present, else detect from name
   const objective = row.objetivo_detectado
@@ -131,6 +142,31 @@ export function filterCampaignsByBucket(campaigns, bucket) {
     const b = c._bucket || tipoCampanaToBucket(c.tipo_campana)
     return b === bucket
   })
+}
+
+export function buildCampaignPerformance(campaigns = [], platform, bucket = null) {
+  return (campaigns || []).reduce((acc, row) => {
+    const rowPlatform = getCampaignPlatform(row)
+    const rowBucket = row._bucket || tipoCampanaToBucket(row.tipo_campana)
+    if (rowPlatform !== platform || (bucket !== null && rowBucket !== bucket)) return acc
+
+    const objective = row._objective || row.objetivo_detectado || row.objetivo || ''
+    const key = normalizeMetricKey(objective)
+    if (!key) return acc
+
+    if (!acc[key]) {
+      acc[key] = {
+        key,
+        objetivo: objective,
+        metrica: objective,
+        resultado: 0,
+        inversion: 0,
+      }
+    }
+    acc[key].resultado += Number.parseFloat(row.resultado) || 0
+    acc[key].inversion += Number.parseFloat(row.inversion) || 0
+    return acc
+  }, {})
 }
 
 export function aggregateCampaignMetrics(campaigns) {
