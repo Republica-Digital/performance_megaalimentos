@@ -5,6 +5,7 @@ import { formatNumber } from '../../utils/format'
 import { isNullishString, classifyEmbed, extractLinkFromEmbed, detectPlatform } from '../../utils/urls'
 
 const EMBED_HEIGHT = 480
+const FACEBOOK_EMBED_WIDTH = 500
 
 const PLATFORM_STYLES = {
   facebook:  { gradient: 'from-blue-500 to-blue-700',                bg: 'rgba(59,130,246,0.15)',  border: 'rgba(59,130,246,0.35)',  label: 'Facebook' },
@@ -49,6 +50,37 @@ function reloadTikTokEmbeds(onLoad, onError) {
   }, 50)
 }
 
+function normalizeFacebookEmbed(container) {
+  if (!container) return
+
+  container.querySelectorAll('.fb-post, .fb-video').forEach(node => {
+    node.setAttribute('data-width', String(FACEBOOK_EMBED_WIDTH))
+    node.setAttribute('data-show-text', 'true')
+    node.style.width = '100%'
+    node.style.maxWidth = `${FACEBOOK_EMBED_WIDTH}px`
+    node.style.margin = '0 auto'
+  })
+
+  container.querySelectorAll('iframe').forEach(iframe => {
+    const src = iframe.getAttribute('src') || ''
+    if (!src.includes('facebook.com/plugins/')) return
+
+    try {
+      const parsed = new URL(src)
+      parsed.searchParams.set('width', String(FACEBOOK_EMBED_WIDTH))
+      parsed.searchParams.set('show_text', 'true')
+      iframe.setAttribute('src', parsed.toString())
+    } catch {}
+
+    iframe.setAttribute('width', String(FACEBOOK_EMBED_WIDTH))
+    iframe.style.width = '100%'
+    iframe.style.maxWidth = `${FACEBOOK_EMBED_WIDTH}px`
+    iframe.style.margin = '0 auto'
+    iframe.style.background = '#fff'
+    iframe.style.borderRadius = '10px'
+  })
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Universal HTML Embed — accepts ANY embed code pasted into embed_url.
 // Scales iframes to fit the container by setting width=100% and preserving
@@ -58,10 +90,12 @@ function UniversalEmbed({ html, platform, onFail }) {
   const ref = useRef(null)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
+  const isFacebookEmbed = platform === 'facebook' || String(html || '').toLowerCase().includes('facebook')
 
   useEffect(() => {
     if (!html || !ref.current) return
     ref.current.innerHTML = html
+    if (isFacebookEmbed) normalizeFacebookEmbed(ref.current)
 
     // Normalize any iframe inside the embed: fill parent & keep aspect.
     const iframes = ref.current.querySelectorAll('iframe')
@@ -106,8 +140,9 @@ function UniversalEmbed({ html, platform, onFail }) {
         () => setLoading(false),
         () => { setFailed(true); onFail?.() }
       )
-    } else if (lc.includes('fb-post') || lc.includes('fb-video') || lc.includes('connect.facebook.net')) {
+    } else if (lc.includes('fb-post') || lc.includes('fb-video') || lc.includes('connect.facebook.net') || isFacebookEmbed) {
       loadScript('fb-sdk', 'https://connect.facebook.net/es_LA/sdk.js#xfbml=1&version=v18.0', () => {
+        normalizeFacebookEmbed(ref.current)
         try { window.FB?.XFBML?.parse(ref.current) } catch {}
         setLoading(false)
       })
@@ -117,7 +152,7 @@ function UniversalEmbed({ html, platform, onFail }) {
 
     const timeout = setTimeout(() => setLoading(false), 4000)
     return () => clearTimeout(timeout)
-  }, [html, platform])
+  }, [html, platform, isFacebookEmbed])
 
   if (failed) {
     return (
@@ -134,7 +169,10 @@ function UniversalEmbed({ html, platform, onFail }) {
   }
 
   return (
-    <div className="relative flex justify-center overflow-hidden" style={{ minHeight: EMBED_HEIGHT }}>
+    <div
+      className={`relative flex justify-center overflow-hidden ${isFacebookEmbed ? 'bg-white p-3' : ''}`}
+      style={{ minHeight: EMBED_HEIGHT }}
+    >
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <Loader className="w-6 h-6 text-white/40 animate-spin" />
@@ -143,7 +181,12 @@ function UniversalEmbed({ html, platform, onFail }) {
       <div
         ref={ref}
         className="overflow-hidden flex items-start justify-center"
-        style={{ maxHeight: EMBED_HEIGHT + 100, minHeight: EMBED_HEIGHT }}
+        style={{
+          maxHeight: EMBED_HEIGHT + 100,
+          minHeight: EMBED_HEIGHT,
+          width: isFacebookEmbed ? '100%' : undefined,
+          maxWidth: isFacebookEmbed ? FACEBOOK_EMBED_WIDTH : undefined,
+        }}
       />
     </div>
   )
@@ -160,7 +203,7 @@ function UrlEmbed({ url, type, onFail }) {
       return `${clean}/embed`
     }
     if (type === 'fb_url') {
-      return `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(url)}&show_text=true&width=380`
+      return `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(url)}&show_text=true&width=${FACEBOOK_EMBED_WIDTH}`
     }
     return null
   }, [url, type])
@@ -194,7 +237,10 @@ function UrlEmbed({ url, type, onFail }) {
   if (!embedSrc) { onFail?.(); return null }
 
   return (
-    <div className="relative flex justify-center overflow-hidden" style={{ minHeight: EMBED_HEIGHT }}>
+    <div
+      className={`relative flex justify-center overflow-hidden ${type === 'fb_url' ? 'bg-white p-3' : ''}`}
+      style={{ minHeight: EMBED_HEIGHT }}
+    >
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
           <Loader className="w-6 h-6 text-white/40 animate-spin" />
@@ -204,7 +250,13 @@ function UrlEmbed({ url, type, onFail }) {
         src={embedSrc}
         title="Post embed"
         className="border-0"
-        style={{ height: EMBED_HEIGHT, width: type === 'fb_url' ? 380 : '100%', maxWidth: '100%' }}
+        style={{
+          height: type === 'fb_url' ? EMBED_HEIGHT + 36 : EMBED_HEIGHT,
+          width: type === 'fb_url' ? FACEBOOK_EMBED_WIDTH : '100%',
+          maxWidth: '100%',
+          borderRadius: type === 'fb_url' ? 10 : 0,
+          background: type === 'fb_url' ? '#fff' : undefined,
+        }}
         scrolling="no"
         allowFullScreen
         allow="autoplay; clipboard-write; encrypted-media; picture-in-picture"
