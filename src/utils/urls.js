@@ -55,6 +55,24 @@ export function normalizeImageUrl(val) {
   return url
 }
 
+function isFacebookPostUrl(url) {
+  if (!/^https?:\/\/([^/]+\.)?(facebook|fb)\.com\//i.test(url) && !/^https?:\/\/fb\.watch\//i.test(url)) {
+    return false
+  }
+
+  return (
+    /fb\.watch\//i.test(url) ||
+    /facebook\.com\/share\/(p|r|v)\//i.test(url) ||
+    /facebook\.com\/story\.php/i.test(url) ||
+    /facebook\.com\/photo\.php/i.test(url) ||
+    /facebook\.com\/watch\/?\?/i.test(url) ||
+    /facebook\.com\/reel\//i.test(url) ||
+    /facebook\.com.*\/(posts|photos|videos|watch|permalink|story|reel)\//i.test(url) ||
+    /facebook\.com.*\/pfbid[A-Za-z0-9]+/i.test(url) ||
+    /facebook\.com.*[?&](fbid|story_fbid|v)=/i.test(url)
+  )
+}
+
 // ─── EMBED CLASSIFICATION ────────────────────────────────────────────────────
 //
 // Classifies what the analyst pasted in embed_url.
@@ -102,7 +120,7 @@ export function classifyEmbed(val) {
       return { type: 'ig_url', value: s }
     }
     // Facebook post (various URL formats)
-    if (/facebook\.com.*\/(posts|photos|videos|watch|permalink|story)/i.test(s) || /fb\.watch/i.test(s)) {
+    if (isFacebookPostUrl(s)) {
       return { type: 'fb_url', value: s }
     }
     // TikTok video
