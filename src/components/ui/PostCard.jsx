@@ -30,6 +30,25 @@ const normalizePlatform = (value) => String(value || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
 
+let tiktokEmbedReloadTimer = null
+
+function reloadTikTokEmbeds(onLoad, onError) {
+  if (typeof document === 'undefined') return
+
+  window.clearTimeout(tiktokEmbedReloadTimer)
+  tiktokEmbedReloadTimer = window.setTimeout(() => {
+    document.getElementById('tt-embed')?.remove()
+
+    const script = document.createElement('script')
+    script.id = 'tt-embed'
+    script.src = 'https://www.tiktok.com/embed.js'
+    script.async = true
+    script.onload = () => onLoad?.()
+    script.onerror = () => onError?.()
+    document.body.appendChild(script)
+  }, 50)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Universal HTML Embed — accepts ANY embed code pasted into embed_url.
 // Scales iframes to fit the container by setting width=100% and preserving
@@ -83,7 +102,10 @@ function UniversalEmbed({ html, platform, onFail }) {
         setLoading(false)
       })
     } else if (lc.includes('tiktok') || platform === 'tiktok') {
-      loadScript('tt-embed', 'https://www.tiktok.com/embed.js', () => setLoading(false))
+      reloadTikTokEmbeds(
+        () => setLoading(false),
+        () => { setFailed(true); onFail?.() }
+      )
     } else if (lc.includes('fb-post') || lc.includes('fb-video') || lc.includes('connect.facebook.net')) {
       loadScript('fb-sdk', 'https://connect.facebook.net/es_LA/sdk.js#xfbml=1&version=v18.0', () => {
         try { window.FB?.XFBML?.parse(ref.current) } catch {}
@@ -145,6 +167,7 @@ function UrlEmbed({ url, type, onFail }) {
 
   useEffect(() => {
     if (type !== 'tt_url' || !ref.current) return
+    setLoading(true)
     const videoId = url.match(/video\/(\d+)/)?.[1]
     if (!videoId) { onFail?.(); return }
     ref.current.innerHTML = `
@@ -152,12 +175,7 @@ function UrlEmbed({ url, type, onFail }) {
         <section></section>
       </blockquote>
     `
-    if (!document.getElementById('tt-embed')) {
-      const s = document.createElement('script')
-      s.id = 'tt-embed'; s.src = 'https://www.tiktok.com/embed.js'; s.async = true
-      document.body.appendChild(s)
-    }
-    setLoading(false)
+    reloadTikTokEmbeds(() => setLoading(false), onFail)
   }, [url, type])
 
   if (type === 'tt_url') {
