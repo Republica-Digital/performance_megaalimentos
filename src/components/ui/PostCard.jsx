@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { Heart, Eye, Play, Trophy, Sparkles, ExternalLink, Image as ImageIcon, Loader, AlertCircle } from 'lucide-react'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { formatNumber } from '../../utils/format'
-import { isNullishString, classifyEmbed, extractLinkFromEmbed } from '../../utils/urls'
+import { isNullishString, classifyEmbed, extractLinkFromEmbed, detectPlatform } from '../../utils/urls'
 
 const EMBED_HEIGHT = 480
 
@@ -23,6 +23,12 @@ function getTypeInfo(type) {
   const key = String(type).toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
   return TYPE_LABELS[key] || { label: String(type), icon: Trophy }
 }
+
+const normalizePlatform = (value) => String(value || '')
+  .toLowerCase()
+  .trim()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Universal HTML Embed — accepts ANY embed code pasted into embed_url.
@@ -270,6 +276,14 @@ export function TopPostCard({ post, type = 'alcance', platform = 'facebook', del
   const style = PLATFORM_STYLES[platform] || PLATFORM_STYLES.facebook
   const embedInfo = classifyEmbed(post.embed_url)
   const linkUrl = extractLinkFromEmbed(post.embed_url)
+  const previewKey = [
+    platform,
+    post.mes,
+    post.plataforma,
+    post.tipo_top || type,
+    post.embed_url,
+    post.imagen_url,
+  ].map(v => String(v || '')).join('|')
 
   // Show all available metrics
   const metrics = [
@@ -304,7 +318,7 @@ export function TopPostCard({ post, type = 'alcance', platform = 'facebook', del
       </div>
 
       <div style={{ height: EMBED_HEIGHT, overflow: 'hidden' }}>
-        <PostPreview post={post} platform={platform} isVideo={isVideo} embedInfo={embedInfo} />
+        <PostPreview key={previewKey} post={post} platform={platform} isVideo={isVideo} embedInfo={embedInfo} />
       </div>
 
       {/* Descripción siempre visible si existe */}
@@ -353,12 +367,23 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 export function TopPostsSection({ posts = [], platform = 'facebook' }) {
   const [page, setPage] = useState(0)
-  if (!posts?.length) return null
+  const platformKey = normalizePlatform(platform)
+  const platformPosts = useMemo(
+    () => (posts || []).filter(post => normalizePlatform(detectPlatform(post)) === platformKey),
+    [posts, platformKey]
+  )
+
+  useEffect(() => {
+    setPage(0)
+  }, [platformKey, platformPosts.length])
+
+  if (!platformPosts?.length) return null
 
   const PAGE_SIZE = 3
-  const totalPages = Math.ceil(posts.length / PAGE_SIZE)
-  const visiblePosts = posts.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
-  const showArrows = posts.length > PAGE_SIZE
+  const totalPages = Math.ceil(platformPosts.length / PAGE_SIZE)
+  const safePage = Math.min(page, Math.max(totalPages - 1, 0))
+  const visiblePosts = platformPosts.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
+  const showArrows = platformPosts.length > PAGE_SIZE
 
   return (
     <div className="space-y-4">
@@ -366,25 +391,25 @@ export function TopPostsSection({ posts = [], platform = 'facebook' }) {
         <div className="flex items-center gap-2">
           <Trophy className="w-4 h-4 text-amber-400" />
           <h3 className="text-base font-bold font-display text-white">Top Posts del Mes</h3>
-          {posts.length > PAGE_SIZE && (
-            <span className="text-xs text-white/40 ml-1">({posts.length} posts)</span>
+          {platformPosts.length > PAGE_SIZE && (
+            <span className="text-xs text-white/40 ml-1">({platformPosts.length} posts)</span>
           )}
         </div>
         {showArrows && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => setPage(p => Math.max(0, p - 1))}
-              disabled={page === 0}
+              disabled={safePage === 0}
               className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronLeft className="w-4 h-4 text-white/70" />
             </button>
             <span className="text-xs text-white/50 font-mono min-w-[3rem] text-center">
-              {page + 1} / {totalPages}
+              {safePage + 1} / {totalPages}
             </span>
             <button
               onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-              disabled={page >= totalPages - 1}
+              disabled={safePage >= totalPages - 1}
               className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <ChevronRight className="w-4 h-4 text-white/70" />
@@ -399,7 +424,15 @@ export function TopPostsSection({ posts = [], platform = 'facebook' }) {
       }`}>
         {visiblePosts.map((post, i) => (
           <TopPostCard
-            key={`${post.tipo_top || ''}-${i}-${page}`}
+            key={[
+              post.marca,
+              post.mes,
+              post.plataforma,
+              post.tipo_top,
+              post.embed_url,
+              post.imagen_url,
+              i,
+            ].map(v => String(v || '')).join('|')}
             post={post}
             type={post.tipo_top || 'alcance'}
             platform={platform}
