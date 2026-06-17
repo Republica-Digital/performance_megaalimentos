@@ -6,6 +6,7 @@ import { isNullishString, classifyEmbed, extractLinkFromEmbed, detectPlatform } 
 
 const EMBED_HEIGHT = 480
 const FACEBOOK_EMBED_WIDTH = 500
+const FACEBOOK_SDK_URL = 'https://connect.facebook.net/es_LA/sdk.js#xfbml=1&version=v18.0'
 
 const PLATFORM_STYLES = {
   facebook:  { gradient: 'from-blue-500 to-blue-700',                bg: 'rgba(59,130,246,0.15)',  border: 'rgba(59,130,246,0.35)',  label: 'Facebook' },
@@ -32,6 +33,7 @@ const normalizePlatform = (value) => String(value || '')
   .replace(/[\u0300-\u036f]/g, '')
 
 let tiktokEmbedReloadTimer = null
+let facebookSdkPromise = null
 
 function reloadTikTokEmbeds(onLoad, onError) {
   if (typeof document === 'undefined') return
@@ -48,6 +50,40 @@ function reloadTikTokEmbeds(onLoad, onError) {
     script.onerror = () => onError?.()
     document.body.appendChild(script)
   }, 50)
+}
+
+function ensureFacebookSdk() {
+  if (typeof document === 'undefined') return Promise.resolve(null)
+  if (window.FB?.XFBML) return Promise.resolve(window.FB)
+  if (facebookSdkPromise) return facebookSdkPromise
+
+  facebookSdkPromise = new Promise((resolve, reject) => {
+    let root = document.getElementById('fb-root')
+    if (!root) {
+      root = document.createElement('div')
+      root.id = 'fb-root'
+      document.body.prepend(root)
+    }
+
+    const existing = document.getElementById('fb-sdk')
+    if (existing) {
+      existing.addEventListener('load', () => resolve(window.FB), { once: true })
+      existing.addEventListener('error', reject, { once: true })
+      return
+    }
+
+    const script = document.createElement('script')
+    script.id = 'fb-sdk'
+    script.src = FACEBOOK_SDK_URL
+    script.async = true
+    script.defer = true
+    script.crossOrigin = 'anonymous'
+    script.onload = () => resolve(window.FB)
+    script.onerror = reject
+    document.body.appendChild(script)
+  })
+
+  return facebookSdkPromise
 }
 
 function normalizeFacebookEmbed(container) {
@@ -141,11 +177,12 @@ function UniversalEmbed({ html, platform, onFail }) {
         () => { setFailed(true); onFail?.() }
       )
     } else if (lc.includes('fb-post') || lc.includes('fb-video') || lc.includes('connect.facebook.net') || isFacebookEmbed) {
-      loadScript('fb-sdk', 'https://connect.facebook.net/es_LA/sdk.js#xfbml=1&version=v18.0', () => {
+      ensureFacebookSdk().then(() => {
         normalizeFacebookEmbed(ref.current)
         try { window.FB?.XFBML?.parse(ref.current) } catch {}
+        window.setTimeout(() => normalizeFacebookEmbed(ref.current), 300)
         setLoading(false)
-      })
+      }).catch(() => { setFailed(true); onFail?.() })
     } else {
       setLoading(false)
     }
@@ -193,6 +230,49 @@ function UniversalEmbed({ html, platform, onFail }) {
 }
 
 // URL → Embed (IG/FB/TT public URLs get converted to proper iframes)
+function FacebookUrlEmbed({ url, onFail }) {
+  const ref = useRef(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!url || !ref.current) return
+    setLoading(true)
+    ref.current.innerHTML = `
+      <div
+        class="fb-post"
+        data-href="${url}"
+        data-width="${FACEBOOK_EMBED_WIDTH}"
+        data-show-text="true"
+      ></div>
+    `
+
+    normalizeFacebookEmbed(ref.current)
+    ensureFacebookSdk().then(() => {
+      try { window.FB?.XFBML?.parse(ref.current) } catch {}
+      window.setTimeout(() => normalizeFacebookEmbed(ref.current), 300)
+      setLoading(false)
+    }).catch(() => {
+      setLoading(false)
+      onFail?.()
+    })
+  }, [url, onFail])
+
+  return (
+    <div className="relative flex justify-center overflow-hidden bg-white p-3" style={{ minHeight: EMBED_HEIGHT }}>
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center z-10">
+          <Loader className="w-6 h-6 text-zinc-500 animate-spin" />
+        </div>
+      )}
+      <div
+        ref={ref}
+        className="overflow-hidden flex items-start justify-center"
+        style={{ minHeight: EMBED_HEIGHT, maxHeight: EMBED_HEIGHT + 100, width: '100%', maxWidth: FACEBOOK_EMBED_WIDTH }}
+      />
+    </div>
+  )
+}
+
 function UrlEmbed({ url, type, onFail }) {
   const [loading, setLoading] = useState(true)
   const ref = useRef(null)
@@ -232,6 +312,10 @@ function UrlEmbed({ url, type, onFail }) {
         <div ref={ref} className="overflow-hidden p-2 flex justify-center" style={{ maxHeight: EMBED_HEIGHT + 100 }} />
       </div>
     )
+  }
+
+  if (type === 'fb_url') {
+    return <FacebookUrlEmbed url={url} onFail={onFail} />
   }
 
   if (!embedSrc) { onFail?.(); return null }
