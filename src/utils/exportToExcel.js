@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs'
+import FileSaver from 'file-saver'
 import { formatMonthShort, formatMonthLong, safeNumber } from './format'
 import { buildCampaignPerformance, getCampaignPlatform, tipoCampanaToBucket, bucketToLabel } from './campaigns'
 
@@ -110,6 +111,45 @@ function autoWidth(ws) {
 }
 
 function addBlank(ws) { ws.addRow([]).height = 6 }
+
+const INVALID_XLSX_CHARS = /[\x00-\x08\x0B\x0C\x0E-\x1F]/g
+
+function cleanWorkbookValues(wb) {
+  wb.eachSheet(ws => {
+    ws.eachRow(row => {
+      row.eachCell(cell => {
+        if (typeof cell.value === 'string') {
+          cell.value = cell.value.replace(INVALID_XLSX_CHARS, '').slice(0, 32767)
+          return
+        }
+
+        if (typeof cell.value === 'number' && !Number.isFinite(cell.value)) {
+          cell.value = null
+        }
+      })
+    })
+  })
+}
+
+function downloadWorkbook(buffer, filename) {
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
+
+  if (typeof FileSaver?.saveAs === 'function') {
+    FileSaver.saveAs(blob, filename)
+    return
+  }
+
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 5000)
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN EXPORT
@@ -1030,15 +1070,8 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
   // ═══════════════════════════════════════════════════════════════════════════
   // SAVE
   // ═══════════════════════════════════════════════════════════════════════════
+  cleanWorkbookValues(wb)
   const buffer   = await wb.xlsx.writeBuffer()
   const safeName = nombre.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '').trim().replace(/\s+/g, '_')
-  const blob     = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-  const url      = URL.createObjectURL(blob)
-  const a        = document.createElement('a')
-  a.href         = url
-  a.download     = `Dashboard_${safeName}_${selectedMonth}.xlsx`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  setTimeout(() => URL.revokeObjectURL(url), 5000)
+  downloadWorkbook(buffer, `Dashboard_${safeName}_${selectedMonth}.xlsx`)
 }
