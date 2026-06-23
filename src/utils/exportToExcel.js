@@ -156,6 +156,208 @@ function downloadWorkbook(buffer, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 5000)
 }
 
+const INVESTMENT_PLATFORMS = ['facebook', 'instagram', 'tiktok', 'google_ads']
+
+function investmentPlatformKey(value) {
+  const key = normK(value).replace(/\s+/g, ' ')
+  if (!key) return 'sin_plataforma'
+  if (key === 'fb' || key === 'facebook') return 'facebook'
+  if (key === 'ig' || key === 'instagram') return 'instagram'
+  if (key === 'tt' || key === 'tik tok' || key === 'tiktok') return 'tiktok'
+  if (key === 'google' || key === 'google ads' || key === 'googleads') return 'google_ads'
+  return key.replace(/\s+/g, '_')
+}
+
+function investmentPlatformLabel(key) {
+  return {
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+    tiktok: 'TikTok',
+    google_ads: 'Google Ads',
+    sin_plataforma: 'Sin plataforma',
+  }[key] || String(key || '').replace(/_/g, ' ')
+}
+
+function isThroughSelectedMonth(month, selectedMonth) {
+  return Boolean(month && selectedMonth && month.slice(0, 4) === selectedMonth.slice(0, 4) && month <= selectedMonth)
+}
+
+function investmentObjectiveKey(row) {
+  return normK(row?.objetivo || row?.metrica || row?._objective || row?.objetivo_detectado || row?.tipo_red || row?.tipo_objetivo || 'Sin objetivo')
+}
+
+function investmentObjectiveLabel(row) {
+  return row?.objetivo || row?.metrica || row?._objective || row?.objetivo_detectado || row?.tipo_red || row?.tipo_objetivo || 'Sin objetivo'
+}
+
+function makeInvestmentModel({ allData, selectedMonth }) {
+  const makeTotals = () => ({ budget: 0, actual: 0, hasBudget: false })
+  const monthMap = new Map()
+  const platformMonthMap = new Map()
+  const platformYtdMap = new Map()
+  const detailMap = new Map()
+  const getOrCreate = (map, key, seed = {}) => {
+    if (!map.has(key)) map.set(key, { ...makeTotals(), ...seed })
+    return map.get(key)
+  }
+
+  const addActual = (month, platform, amount) => {
+    if (!isThroughSelectedMonth(month, selectedMonth)) return
+    const platformKey = investmentPlatformKey(platform)
+    getOrCreate(monthMap, month).actual += amount
+    getOrCreate(platformMonthMap, `${platformKey}|${month}`, { platform: platformKey, month }).actual += amount
+    getOrCreate(platformYtdMap, platformKey, { platform: platformKey }).actual += amount
+  }
+  const addBudget = (month, platform, amount) => {
+    if (!isThroughSelectedMonth(month, selectedMonth) || amount <= 0) return
+    const platformKey = investmentPlatformKey(platform)
+    const monthRec = getOrCreate(monthMap, month)
+    monthRec.budget += amount
+    monthRec.hasBudget = true
+    const platformMonthRec = getOrCreate(platformMonthMap, `${platformKey}|${month}`, { platform: platformKey, month })
+    platformMonthRec.budget += amount
+    platformMonthRec.hasBudget = true
+    const platformYtdRec = getOrCreate(platformYtdMap, platformKey, { platform: platformKey })
+    platformYtdRec.budget += amount
+    platformYtdRec.hasBudget = true
+  }
+  const addDetailActual = (row, platform, type, objective, amount) => {
+    const month = row?.mes
+    if (!isThroughSelectedMonth(month, selectedMonth)) return
+    const platformKey = investmentPlatformKey(platform)
+    const bucket = type || 'Mensual / AON'
+    const objectiveKey = normK(objective || 'Sin objetivo')
+    const rec = getOrCreate(detailMap, `${platformKey}|${bucket}|${objectiveKey}`, {
+      platform: platformKey,
+      bucket,
+      objective: objective || 'Sin objetivo',
+      currentActual: 0,
+      currentBudget: 0,
+      hasCurrentBudget: false,
+    })
+    rec.actual += amount
+    if (month === selectedMonth) rec.currentActual += amount
+  }
+  const addDetailBudget = (row, amount) => {
+    const month = row?.mes
+    if (!isThroughSelectedMonth(month, selectedMonth) || amount <= 0) return
+    const platformKey = investmentPlatformKey(row.plataforma)
+    const bucket = bucketToLabel(tipoCampanaToBucket(row.tipo_campana || 'AON'), row.tipo_campana || 'AON')
+    const objective = investmentObjectiveLabel(row)
+    const rec = getOrCreate(detailMap, `${platformKey}|${bucket}|${investmentObjectiveKey(row)}`, {
+      platform: platformKey,
+      bucket,
+      objective,
+      currentActual: 0,
+      currentBudget: 0,
+      hasCurrentBudget: false,
+    })
+    rec.budget += amount
+    rec.hasBudget = true
+    if (month === selectedMonth) {
+      rec.currentBudget += amount
+      rec.hasCurrentBudget = true
+    }
+  }
+
+  for (const row of (allData?.campanas || [])) {
+    const platform = getCampaignPlatform(row)
+    const amount = v(row.inversion)
+    addActual(row.mes, platform, amount)
+    addDetailActual(
+      row,
+      platform,
+      bucketToLabel(row._bucket || tipoCampanaToBucket(row.tipo_campana), row.tipo_campana || row._tipoCampana || 'AON'),
+      row._objective || row.objetivo_detectado || row.objetivo,
+      amount,
+    )
+  }
+
+  for (const row of (allData?.googleAds || [])) {
+    const amount = v(row.inversion)
+    addActual(row.mes, 'google_ads', amount)
+    addDetailActual(row, 'google_ads', 'Mensual / AON', row.tipo_red || row.tipo_objetivo || 'Google Ads', amount)
+  }
+
+  for (const row of (allData?.proyecciones || [])) {
+    const budget = v(row.presupuesto)
+    addBudget(row.mes, row.plataforma, budget)
+    addDetailBudget(row, budget)
+  }
+
+  const months = [...monthMap.keys()].sort()
+  const hasAnyBudget = [...monthMap.values()].some(rec => rec.hasBudget)
+  const platformKeys = [...new Set([
+    ...INVESTMENT_PLATFORMS,
+    ...[...platformYtdMap.keys()],
+    ...[...platformMonthMap.values()].map(rec => rec.platform),
+  ])]
+  const platformRows = platformKeys.map(platform => {
+    const monthRec = platformMonthMap.get(`${platform}|${selectedMonth}`) || makeTotals()
+    const ytdRec = platformYtdMap.get(platform) || makeTotals()
+    return {
+      platform,
+      label: investmentPlatformLabel(platform),
+      monthBudget: monthRec.budget,
+      monthActual: monthRec.actual,
+      hasMonthBudget: monthRec.hasBudget,
+      ytdBudget: ytdRec.budget,
+      ytdActual: ytdRec.actual,
+      hasYtdBudget: ytdRec.hasBudget,
+    }
+  }).filter(row => row.monthBudget || row.monthActual || row.ytdBudget || row.ytdActual || INVESTMENT_PLATFORMS.includes(row.platform))
+
+  const monthRows = months.map(month => ({ month, ...(monthMap.get(month) || makeTotals()) }))
+  const detailRows = [...detailMap.values()]
+    .map(rec => ({ ...rec, pendingBudget: hasAnyBudget && rec.actual > 0 && !rec.hasBudget }))
+    .filter(rec => rec.budget || rec.actual)
+    .sort((a, b) => `${a.platform}|${a.bucket}|${a.objective}`.localeCompare(`${b.platform}|${b.bucket}|${b.objective}`))
+  const selected = monthMap.get(selectedMonth) || makeTotals()
+  const ytd = monthRows.reduce((acc, rec) => ({
+    budget: acc.budget + rec.budget,
+    actual: acc.actual + rec.actual,
+    hasBudget: acc.hasBudget || rec.hasBudget,
+  }), makeTotals())
+  const hasPendingBudget = hasAnyBudget && (
+    platformRows.some(row => (row.monthActual > 0 && !row.hasMonthBudget) || (row.ytdActual > 0 && !row.hasYtdBudget))
+    || detailRows.some(row => row.pendingBudget)
+  )
+
+  return { hasAnyBudget, hasPendingBudget, selected, ytd, platformRows, monthRows, detailRows }
+}
+
+function setMoney(cell, value) {
+  cell.value = value
+  cell.numFmt = '$#,##0.00'
+}
+
+function setBalance(cell, budget, actual) {
+  const balance = budget - actual
+  cell.value = balance
+  cell.numFmt = '$#,##0.00;-$#,##0.00;$0.00'
+  cell.font = font({ bold: true, color: { argb: balance >= 0 ? '16A34A' : 'DC2626' } })
+}
+
+function setBudgetOrPending(cell, value, hasBudget, hasAnyBudget) {
+  if (!hasAnyBudget || hasBudget) {
+    setMoney(cell, value)
+    return
+  }
+  cell.value = 'Pendiente capturar'
+  cell.font = font({ italic: true, color: { argb: 'D97706' } })
+}
+
+function setUsageOrPending(cell, budget, actual, hasBudget, hasAnyBudget) {
+  if (!hasAnyBudget || !hasBudget || budget <= 0) {
+    cell.value = hasAnyBudget ? 'Pendiente capturar' : 'N/A'
+    cell.font = font({ italic: true, color: { argb: '6B7280' } })
+    return
+  }
+  cell.value = actual / budget
+  cell.numFmt = '0.0%'
+  cell.font = font({ bold: true, color: { argb: actual > budget ? 'DC2626' : '16A34A' } })
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN EXPORT
 // Called from Dashboard as: exportDashboardData({ brandConfig, filteredData, allData, selectedMonth })
@@ -849,8 +1051,138 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TAB 7: COMPETENCIA
+  // TAB 7: INVERSION
   // ═══════════════════════════════════════════════════════════════════════════
+  {
+    const investment = makeInvestmentModel({ allData, selectedMonth })
+    const ws = wb.addWorksheet('Inversión', { properties: { tabColor: { argb: '0F766E' } } })
+    const N = investment.hasAnyBudget ? 8 : 5
+    let r = ws.addRow([`Inversión - ${monthLabel}`])
+    applyTitle(ws, r, N, '0F766E')
+    addBlank(ws)
+
+    r = ws.addRow(['ESTADO FINANCIERO DEL MES'])
+    applySubtitle(ws, r, N, '0F766E')
+    if (investment.hasAnyBudget) {
+      r = ws.addRow(['Presupuesto del mes', investment.selected.budget, 'Inversión real del mes', investment.selected.actual, 'Balance', '', '% usado', ''])
+      applyBody(r, N, false)
+      setBudgetOrPending(r.getCell(2), investment.selected.budget, investment.selected.hasBudget, true)
+      setMoney(r.getCell(4), investment.selected.actual)
+      setBalance(r.getCell(6), investment.selected.budget, investment.selected.actual)
+      setUsageOrPending(r.getCell(8), investment.selected.budget, investment.selected.actual, investment.selected.hasBudget, true)
+
+      r = ws.addRow(['Presupuesto acumulado', investment.ytd.budget, 'Inversión acumulada', investment.ytd.actual, 'Balance acumulado', '', '% usado acum.', ''])
+      applyBody(r, N, true)
+      setMoney(r.getCell(2), investment.ytd.budget)
+      setMoney(r.getCell(4), investment.ytd.actual)
+      setBalance(r.getCell(6), investment.ytd.budget, investment.ytd.actual)
+      setUsageOrPending(r.getCell(8), investment.ytd.budget, investment.ytd.actual, investment.ytd.hasBudget, true)
+
+      if (investment.hasPendingBudget) {
+        r = ws.addRow(['Nota', 'Balance y % usado pueden diferir de la realidad porque hay presupuestos pendientes por capturar.', '', '', '', '', '', ''])
+        ws.mergeCells(r.number, 2, r.number, N)
+        applyBody(r, N, false)
+        r.getCell(1).font = font({ bold: true, color: { argb: 'D97706' } })
+        r.getCell(2).font = font({ italic: true, color: { argb: '92400E' } })
+        r.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FEF3C7' } }
+      }
+    } else {
+      r = ws.addRow(['Inversión real del mes', investment.selected.actual, 'Inversión acumulada', investment.ytd.actual, ''])
+      applyBody(r, N, false)
+      setMoney(r.getCell(2), investment.selected.actual)
+      setMoney(r.getCell(4), investment.ytd.actual)
+    }
+    addBlank(ws)
+
+    r = ws.addRow(['RESUMEN POR PLATAFORMA'])
+    applySubtitle(ws, r, N, '0F766E')
+    if (investment.hasAnyBudget) {
+      r = ws.addRow(['Plataforma', 'Presupuesto Mes', 'Inversión Mes', 'Balance Mes', '% Usado', 'Presupuesto Acum.', 'Inversión Acum.', 'Balance Acum.'])
+      applyHeader(r, N, DARK_BG)
+      investment.platformRows.forEach((item, i) => {
+        const row = ws.addRow([item.label, '', item.monthActual, '', '', '', item.ytdActual, ''])
+        applyBody(row, N, i % 2 === 1)
+        setBudgetOrPending(row.getCell(2), item.monthBudget, item.hasMonthBudget, true)
+        setMoney(row.getCell(3), item.monthActual)
+        if (item.hasMonthBudget) setBalance(row.getCell(4), item.monthBudget, item.monthActual)
+        else row.getCell(4).value = 'Pendiente capturar'
+        setUsageOrPending(row.getCell(5), item.monthBudget, item.monthActual, item.hasMonthBudget, true)
+        setBudgetOrPending(row.getCell(6), item.ytdBudget, item.hasYtdBudget, true)
+        setMoney(row.getCell(7), item.ytdActual)
+        if (item.hasYtdBudget) setBalance(row.getCell(8), item.ytdBudget, item.ytdActual)
+        else row.getCell(8).value = 'Pendiente capturar'
+      })
+    } else {
+      r = ws.addRow(['Plataforma', 'Inversión Mes', '% del Total Mes', 'Inversión Acum.', ''])
+      applyHeader(r, N, DARK_BG)
+      investment.platformRows.forEach((item, i) => {
+        const row = ws.addRow([
+          item.label,
+          item.monthActual,
+          investment.selected.actual > 0 ? item.monthActual / investment.selected.actual : 0,
+          item.ytdActual,
+          '',
+        ])
+        applyBody(row, N, i % 2 === 1)
+        row.getCell(2).numFmt = '$#,##0.00'
+        row.getCell(3).numFmt = '0.0%'
+        row.getCell(4).numFmt = '$#,##0.00'
+      })
+    }
+    addBlank(ws)
+
+    r = ws.addRow(['HISTÓRICO MENSUAL'])
+    applySubtitle(ws, r, N, '0F766E')
+    if (investment.hasAnyBudget) {
+      r = ws.addRow(['Mes', 'Presupuesto', 'Inversión Real', 'Balance', '% Usado', '', '', ''])
+      applyHeader(r, 5, DARK_BG)
+      investment.monthRows.forEach((item, i) => {
+        const row = ws.addRow([formatMonthShort(item.month), '', item.actual, '', '', '', '', ''])
+        applyBody(row, N, i % 2 === 1)
+        setBudgetOrPending(row.getCell(2), item.budget, item.hasBudget, true)
+        setMoney(row.getCell(3), item.actual)
+        if (item.hasBudget) setBalance(row.getCell(4), item.budget, item.actual)
+        else row.getCell(4).value = 'Pendiente capturar'
+        setUsageOrPending(row.getCell(5), item.budget, item.actual, item.hasBudget, true)
+      })
+    } else {
+      r = ws.addRow(['Mes', 'Inversión Real', '', '', ''])
+      applyHeader(r, 2, DARK_BG)
+      investment.monthRows.forEach((item, i) => {
+        const row = ws.addRow([formatMonthShort(item.month), item.actual, '', '', ''])
+        applyBody(row, N, i % 2 === 1)
+        row.getCell(2).numFmt = '$#,##0.00'
+      })
+    }
+    addBlank(ws)
+
+    r = ws.addRow(['DESGLOSE ESTRATÉGICO'])
+    applySubtitle(ws, r, N, '0F766E')
+    if (investment.hasAnyBudget) {
+      r = ws.addRow(['Plataforma', 'Grupo', 'Objetivo / Métrica', 'Presupuesto', 'Inversión Real', 'Balance', '% Usado', ''])
+      applyHeader(r, N, DARK_BG)
+      investment.detailRows.forEach((item, i) => {
+        const row = ws.addRow([investmentPlatformLabel(item.platform), item.bucket, item.objective, '', item.actual, '', '', ''])
+        applyBody(row, N, i % 2 === 1)
+        setBudgetOrPending(row.getCell(4), item.budget, item.hasBudget, true)
+        setMoney(row.getCell(5), item.actual)
+        if (item.hasBudget) setBalance(row.getCell(6), item.budget, item.actual)
+        else row.getCell(6).value = 'Pendiente capturar'
+        setUsageOrPending(row.getCell(7), item.budget, item.actual, item.hasBudget, true)
+      })
+    } else {
+      r = ws.addRow(['Plataforma', 'Grupo', 'Objetivo / Métrica', 'Inversión Real', ''])
+      applyHeader(r, 5, DARK_BG)
+      investment.detailRows.forEach((item, i) => {
+        const row = ws.addRow([investmentPlatformLabel(item.platform), item.bucket, item.objective, item.actual, ''])
+        applyBody(row, N, i % 2 === 1)
+        row.getCell(4).numFmt = '$#,##0.00'
+      })
+    }
+    autoWidth(ws)
+  }
+
+  // TAB 8: COMPETENCIA
   const comp = filteredData.competencia || []
   if (comp.length > 0) {
     const ws   = wb.addWorksheet('Competencia', { properties: { tabColor: { argb: 'F59E0B' } } })

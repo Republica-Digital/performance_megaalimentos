@@ -35,7 +35,8 @@ const FIELD_PATTERNS = {
   engagement_rate: /^(engagement_rate|engagement|engagement_pct|engagement_percent)$/,
   nuevos_seguidores: /^(nuevos_seguidores|new_followers|nuevos_followers)$/,
   publicaciones: /^(publicaciones|posts|post_count)$/,
-  inversion: /^(inversion|investment|spend|presupuesto|budget|costo)$/,
+  inversion: /^(inversion|investment|spend|costo)$/,
+  presupuesto: /^(presupuesto|budget|presupuesto_asignado|budget_asignado)$/,
   
   // Specific to TikTok
   views: /^(views|visualizaciones|vistas)$/,
