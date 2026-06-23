@@ -138,6 +138,7 @@ export function Dashboard() {
         filteredData,
         allData: data,
         selectedMonth,
+        onProgress: setExportStatus,
       })
       setExportStatus(null)
     } catch (err) {

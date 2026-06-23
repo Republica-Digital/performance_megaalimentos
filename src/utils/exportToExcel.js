@@ -362,7 +362,15 @@ function setUsageOrPending(cell, budget, actual, hasBudget, hasAnyBudget) {
 // MAIN EXPORT
 // Called from Dashboard as: exportDashboardData({ brandConfig, filteredData, allData, selectedMonth })
 // ─────────────────────────────────────────────────────────────────────────────
-export async function exportDashboardData({ brandConfig, filteredData, allData, selectedMonth }) {
+function withTimeout(promise, ms, message) {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
+export async function exportDashboardData({ brandConfig, filteredData, allData, selectedMonth, onProgress }) {
   const marcaId    = brandConfig?.marca_id || brandConfig?.id || 'default'
   const nombre     = brandConfig?.nombre   || marcaId
   const accent     = (BRAND_HEX[marcaId] || BRAND_HEX.default).toUpperCase()
@@ -1407,8 +1415,16 @@ export async function exportDashboardData({ brandConfig, filteredData, allData, 
   // ═══════════════════════════════════════════════════════════════════════════
   // SAVE
   // ═══════════════════════════════════════════════════════════════════════════
+  onProgress?.('Limpiando datos del archivo...')
   cleanWorkbookValues(wb)
-  const buffer   = await wb.xlsx.writeBuffer()
+  onProgress?.('Preparando archivo Excel...')
+  await new Promise(resolve => setTimeout(resolve, 0))
+  const buffer   = await withTimeout(
+    wb.xlsx.writeBuffer(),
+    120000,
+    'El archivo tardó demasiado en generarse. Intenta cerrar otras pestañas o exportar nuevamente.',
+  )
   const safeName = nombre.replace(/[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ ]/g, '').trim().replace(/\s+/g, '_')
+  onProgress?.('Descargando Excel...')
   downloadWorkbook(buffer, `Dashboard_${safeName}_${selectedMonth}.xlsx`)
 }
