@@ -142,8 +142,9 @@ export function Dashboard() {
       setExportStatus(null)
     } catch (err) {
       console.error('Excel export error:', err)
-      setExportStatus('Error al exportar Excel')
-      setTimeout(() => setExportStatus(null), 3000)
+      const message = err?.message ? `Error al exportar Excel: ${err.message}` : 'Error al exportar Excel'
+      setExportStatus(message)
+      setTimeout(() => setExportStatus(null), 6000)
     }
   }, [canExport, brandConfig, filteredData, data, selectedMonth])
 
@@ -223,6 +224,7 @@ export function Dashboard() {
             onExportPDF={handleExportPDF}
             onExportExcel={handleExportExcel}
             isExporting={!!exportStatus}
+            exportStatus={exportStatus}
             canExport={canExport}
           />
 

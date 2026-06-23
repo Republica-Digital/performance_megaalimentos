@@ -135,9 +135,10 @@ function downloadWorkbook(buffer, filename) {
   const blob = new Blob([buffer], {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
+  const saveWorkbookAs = FileSaver?.saveAs || FileSaver?.default || FileSaver
 
-  if (typeof FileSaver?.saveAs === 'function') {
-    FileSaver.saveAs(blob, filename)
+  if (typeof saveWorkbookAs === 'function') {
+    saveWorkbookAs(blob, filename)
     return
   }
 
