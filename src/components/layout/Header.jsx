@@ -10,7 +10,7 @@ export function Header({
   filterMode, onFilterModeChange, startDate, endDate, onRangeChange,
   minDate, maxDate,
   onRefresh, isRefreshing, presentationMode, setPresentationMode,
-  onExportPDF, onExportExcel, isExporting, canExport,
+  onExportPDF, onExportExcel, isExporting, exportStatus, canExport,
 }) {
   const [exportMenuOpen, setExportMenuOpen] = useState(false)
   const exportRef = useRef(null)
@@ -112,6 +112,12 @@ export function Header({
               )}
             </AnimatePresence>
           </div>
+          )}
+
+          {exportStatus && (
+            <span className="hidden lg:inline max-w-[280px] truncate text-xs text-white/55">
+              {exportStatus}
+            </span>
           )}
 
           {/* Fullscreen */}
