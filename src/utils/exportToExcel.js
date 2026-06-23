@@ -4,6 +4,10 @@ import { formatMonthShort, formatMonthLong, safeNumber } from './format'
 import { buildCampaignPerformance, getCampaignPlatform, tipoCampanaToBucket, bucketToLabel } from './campaigns'
 
 const v = (val) => safeNumber(val, 0)
+const normP  = s => String(s || '').toLowerCase().trim()
+const normK  = s => String(s || '').toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+const isCPM  = m => { const k = normK(m || ''); return k.includes('alcance') || k.includes('reach') }
+const isCPV  = m => { const k = normK(m || ''); return k.includes('view') || k.includes('thruplay') }
 const prevMonth = (m) => {
   if (!m?.includes('-')) return null
   const [y, mo] = m.split('-').map(Number)
