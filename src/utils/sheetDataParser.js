@@ -41,7 +41,8 @@ const fieldAliases = {
   engagement_rate: ['engagementrate', 'engagementpct'],
   nuevos_seguidores: ['nuevosseguidores', 'newfollowers'],
   publicaciones: ['publicaciones', 'posts'],
-  inversion: ['inversion', 'investment', 'spend', 'presupuesto', 'budget', 'costo', 'cost'],
+  inversion: ['inversion', 'investment', 'spend', 'costo', 'cost'],
+  presupuesto: ['presupuesto', 'budget', 'presupuestoasignado', 'budgetasignado'],
   
   // TikTok
   views: ['views', 'visualizaciones', 'vistas'],
@@ -207,7 +208,7 @@ export function processRow(row, fieldMapping) {
   // Normalize numeric fields
   const numericFields = [
     'seguidores', 'alcance', 'impresiones', 'impresiones_visibles', 'interacciones',
-    'engagement_rate', 'nuevos_seguidores', 'publicaciones', 'inversion',
+    'engagement_rate', 'nuevos_seguidores', 'publicaciones', 'inversion', 'presupuesto',
     'views', 'views_6s', 'clics', 'ctr', 'cpc', 'conversiones', 'cpa',
     'meta', 'resultado', 'variacion_pct',
     'positivo_pct', 'neutro_pct', 'negativo_pct',
