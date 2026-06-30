@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowRight, Sparkles } from 'lucide-react'
+import { ArrowRight, BarChart3, Sparkles, Users } from 'lucide-react'
 import Papa from 'papaparse'
 import { normalizeImageUrl } from '../utils/urls'
 
@@ -145,14 +145,12 @@ export function BrandSelector() {
         {/* Brand grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-5xl w-full">
           {brands.map((brand, index) => (
-            <motion.button
+            <motion.div
               key={brand.marca_id}
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: index * 0.1 }}
               whileHover={{ y: -6 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => navigate(`/dashboard/${brand.marca_id}`)}
               className="group relative glass-card rounded-3xl p-7 text-left overflow-hidden"
             >
               {/* Color flare on hover */}
@@ -187,17 +185,27 @@ export function BrandSelector() {
                 {brand.nombre}
               </h2>
 
-              {/* CTA */}
-              <div
-                className="flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-wider py-2.5 px-4 rounded-full transition-all duration-300"
-                style={{
-                  backgroundColor: `${brand.color_primario}25`,
-                  color: '#ffffff',
-                  border: `1px solid ${brand.color_primario}66`,
-                }}
-              >
-                <span>Ver Dashboard</span>
-                <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+              {/* CTAs */}
+              <div className="relative grid grid-cols-1 gap-2">
+                <button
+                  onClick={() => navigate(`/dashboard/${brand.marca_id}`)}
+                  className="flex items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider py-2.5 px-4 rounded-xl transition-all duration-300 hover:brightness-110"
+                  style={{
+                    backgroundColor: `${brand.color_primario}25`,
+                    color: '#ffffff',
+                    border: `1px solid ${brand.color_primario}66`,
+                  }}
+                >
+                  <span className="inline-flex items-center gap-2"><BarChart3 className="w-3.5 h-3.5" /> RRSS y Paid Media</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => navigate(`/influencers/${brand.marca_id}`)}
+                  className="flex items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider py-2.5 px-4 rounded-xl bg-white/10 border border-white/15 text-white transition-all duration-300 hover:bg-white/15"
+                >
+                  <span className="inline-flex items-center gap-2"><Users className="w-3.5 h-3.5" /> Influencers</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
               </div>
 
               {/* Bottom accent line */}
@@ -205,7 +213,7 @@ export function BrandSelector() {
                 className="absolute bottom-0 left-0 right-0 h-1 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-500 origin-left"
                 style={{ background: `linear-gradient(90deg, ${brand.color_primario}, ${brand.color_secundario || brand.color_primario})` }}
               />
-            </motion.button>
+            </motion.div>
           ))}
         </div>
 

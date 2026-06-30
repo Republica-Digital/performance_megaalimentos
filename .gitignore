@@ -1,5 +1,7 @@
 node_modules/
 dist/
+appscript-influencers-dashboard/
+.clasp.json
 .env
 .env.*
 !.env.example
