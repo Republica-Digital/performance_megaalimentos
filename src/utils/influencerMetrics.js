@@ -3,7 +3,8 @@ import { safeNumber } from './format'
 export const INFLUENCER_SHEET_ID = import.meta.env.VITE_INFLUENCERS_SHEET_ID || '1tN3OamHgUFrIq2kn8XweLBrOTtcd86iC6oAIXvZgiWM'
 
 export const INFLUENCER_BRANDS = {
-  botanera: { slug: 'botanera', name: 'Botanera', color: '#FF6B00', accent: '#FFD700' },
+  botanera: { slug: 'botanera', name: 'La Botanera', color: '#FF6B00', accent: '#FFD700' },
+  'la-botanera': { slug: 'botanera', name: 'La Botanera', color: '#FF6B00', accent: '#FFD700' },
   'chamoy-mega': { slug: 'chamoy-mega', name: 'Chamoy Mega', color: '#A855F7', accent: '#FFD700' },
   chamoy: { slug: 'chamoy-mega', name: 'Chamoy Mega', color: '#A855F7', accent: '#FFD700' },
   'pacific-mix': { slug: 'pacific-mix', name: 'Pacific Mix', color: '#3B82F6', accent: '#E31E24' },
@@ -11,7 +12,8 @@ export const INFLUENCER_BRANDS = {
 }
 
 export const BRAND_TO_INFLUENCER_ID = {
-  botanera: 'Botanera',
+  botanera: 'La Botanera',
+  'la-botanera': 'La Botanera',
   chamoy: 'Chamoy Mega',
   'chamoy-mega': 'Chamoy Mega',
   pacific: 'Pacific Mix',
@@ -65,7 +67,11 @@ export function influencerRouteSlug(value) {
 }
 
 export function isSameBrand(rowBrand, selectedBrandName) {
-  return normalizeKey(rowBrand) === normalizeKey(selectedBrandName)
+  const rowSlug = normalizeBrandSlug(rowBrand)
+  const selectedSlug = normalizeBrandSlug(selectedBrandName)
+  const rowCanonical = INFLUENCER_BRANDS[rowSlug]?.slug || rowSlug
+  const selectedCanonical = INFLUENCER_BRANDS[selectedSlug]?.slug || selectedSlug
+  return rowCanonical === selectedCanonical
 }
 
 export function normalizeDate(value) {
