@@ -58,8 +58,10 @@ function normalizeCampaign(row, brand) {
 }
 
 function normalizeInfluencer(row) {
+  const id = String(readField(row, ['ID', 'influencer_id'])).trim()
+  const sheetPhoto = normalizeDriveImage(readField(row, ['Foto URL', 'foto_url']))
   return {
-    id: String(readField(row, ['ID', 'influencer_id'])).trim(),
+    id,
     marcaId: String(readField(row, ['Marca ID', 'marca_id'])).trim().toUpperCase(),
     name: String(readField(row, ['Nombre', 'Influencer'])).trim(),
     tiktok: String(readField(row, ['Handle TikTok', 'handle_tiktok'])).trim(),
@@ -69,10 +71,17 @@ function normalizeInfluencer(row) {
     followersInstagram: safeNumber(readField(row, ['Seguidores Instagram'])),
     followersFacebook: safeNumber(readField(row, ['Seguidores Facebook'])),
     category: String(readField(row, ['Categoría', 'Categoria', 'category'])).trim(),
-    photo: normalizeDriveImage(readField(row, ['Foto URL', 'foto_url'])),
+    photo: sheetPhoto || localInfluencerPhoto(id),
     fee: safeNumber(readField(row, ['Fee Total', 'fee_total', 'fee'])),
     notes: String(readField(row, ['Notas', 'notes'])).trim(),
   }
+}
+
+function localInfluencerPhoto(id) {
+  const photos = {
+    bastiandelfin: '/influencers/bastiandelfin.png',
+  }
+  return photos[id] || ''
 }
 
 function normalizeContent(row, fallbackCampaignId) {
