@@ -35,6 +35,46 @@ body {
 .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .line-clamp-3 { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
+.influencer-embed-shell {
+  height: clamp(320px, 58vh, 560px);
+}
+
+.influencer-embed-stage > iframe,
+.influencer-embed-stage iframe,
+.influencer-embed-iframe {
+  width: min(100%, 420px) !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  margin: 0 auto !important;
+  display: block !important;
+}
+
+.influencer-embed-stage blockquote,
+.influencer-embed-stage .instagram-media,
+.influencer-embed-stage .tiktok-embed {
+  width: min(100%, 420px) !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  max-height: 100% !important;
+  margin: 0 auto !important;
+  overflow: hidden !important;
+}
+
+.influencer-embed-stage video {
+  width: auto !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+}
+
+@media (min-height: 820px) {
+  .influencer-embed-shell {
+    height: clamp(360px, 62vh, 640px);
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
    Glassmorphism v2 — más profundidad, borde luminoso
 ───────────────────────────────────────────────────────────────────────── */

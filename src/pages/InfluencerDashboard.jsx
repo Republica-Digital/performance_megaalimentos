@@ -35,6 +35,14 @@ const navItems = [
   { key: 'findings', label: 'Hallazgos', icon: Sparkles },
 ]
 
+function isVisibleCampaign(campaign) {
+  const status = String(campaign.status || '').toLowerCase()
+  const hasActivity = safeNumber(campaign.contentCount) > 0 ||
+    safeNumber(campaign.paid?.views6s) > 0 ||
+    safeNumber(campaign.paid?.investment) > 0
+  return hasActivity || (status && !status.includes('archiv'))
+}
+
 export function InfluencerDashboard() {
   const { marcaId } = useParams()
   const navigate = useNavigate()
@@ -102,19 +110,25 @@ export function InfluencerDashboard() {
     })
   }, [data])
 
+  const visibleCampaignSummaries = useMemo(
+    () => campaignSummaries.filter(isVisibleCampaign),
+    [campaignSummaries]
+  )
+
   const selectedCampaign = useMemo(() => {
     if (!data) return null
+    const contextCampaigns = visibleCampaignSummaries.length ? visibleCampaignSummaries : campaignSummaries
     if (campaignId === 'all') {
       return {
         id: 'all',
         name: 'Todas las campañas',
-        startDate: minDate(data.campaigns.map(row => row.startDate)),
-        endDate: maxDate(data.campaigns.map(row => row.endDate)),
+        startDate: minDate(contextCampaigns.map(row => row.startDate)),
+        endDate: maxDate(contextCampaigns.map(row => row.endDate)),
         objective: 'Vista consolidada de la marca',
       }
     }
-    return data.campaigns.find(row => row.id === campaignId) || null
-  }, [data, campaignId])
+    return campaignSummaries.find(row => row.id === campaignId) || null
+  }, [data, campaignId, campaignSummaries, visibleCampaignSummaries])
 
   if (error) {
     return (
@@ -169,7 +183,7 @@ export function InfluencerDashboard() {
               <div className="flex items-center gap-2 flex-wrap">
                 <select value={campaignId} onChange={e => setCampaignId(e.target.value)} className="proyecciones-select min-w-[180px]">
                   <option value="all">Todas las campañas</option>
-                  {(data?.campaigns || []).map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}
+                  {visibleCampaignSummaries.map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}
                 </select>
                 <select value={platform} onChange={e => setPlatform(e.target.value)} className="proyecciones-select">
                   <option value="all">Todas</option>
@@ -192,10 +206,10 @@ export function InfluencerDashboard() {
               <LoadingState />
             ) : (
               <>
-                <CampaignRail campaigns={campaignSummaries} selectedId={campaignId} onSelect={setCampaignId} theme={theme} />
+                <CampaignRail campaigns={visibleCampaignSummaries} selectedId={campaignId} onSelect={setCampaignId} theme={theme} />
                 <CampaignContext campaign={selectedCampaign} filtered={filtered} theme={theme} />
-                {tab === 'campaigns' && <CampaignsView campaigns={campaignSummaries} selectedId={campaignId} onSelect={setCampaignId} onContentSelect={setSelectedContent} theme={theme} />}
-                {tab === 'overview' && <Overview filtered={filtered} campaignSummaries={campaignSummaries} theme={theme} onTab={setTab} onCampaignSelect={setCampaignId} />}
+                {tab === 'campaigns' && <CampaignsView campaigns={visibleCampaignSummaries} selectedId={campaignId} onSelect={setCampaignId} onContentSelect={setSelectedContent} theme={theme} />}
+                {tab === 'overview' && <Overview filtered={filtered} campaignSummaries={visibleCampaignSummaries} theme={theme} onTab={setTab} onCampaignSelect={setCampaignId} />}
                 {tab === 'influencers' && <InfluencersView rollups={filtered.rollups} theme={theme} onSelect={setSelectedInfluencer} />}
                 {tab === 'content' && <ContentView contents={filtered.contents} query={query} setQuery={setQuery} onSelect={setSelectedContent} />}
                 {tab === 'paid' && <PaidView paid={filtered.paid} totals={filtered.paidTotals} />}
@@ -869,19 +883,19 @@ function ContentEmbedPreview({ content }) {
 
   if (embed.kind === 'html') {
     return (
-      <div className="mb-5 rounded-2xl bg-black/25 border border-white/10 overflow-hidden">
-        <div ref={ref} className="min-h-[520px] flex items-start justify-center p-3" />
+      <div className="influencer-embed-shell mb-5 rounded-2xl bg-black/25 border border-white/10 overflow-hidden">
+        <div ref={ref} className="influencer-embed-stage flex h-full w-full items-center justify-center p-3" />
       </div>
     )
   }
 
   return (
-    <div className="mb-5 rounded-2xl bg-black/25 border border-white/10 overflow-hidden">
+    <div className="influencer-embed-shell mb-5 rounded-2xl bg-black/25 border border-white/10 overflow-hidden">
       <iframe
         src={embed.src}
         title={`${content.platform || 'Contenido'} embed`}
-        className="w-full border-0 bg-white"
-        style={{ height: embed.height || 560 }}
+        className="influencer-embed-iframe border-0 bg-white"
+        style={{ height: `min(62vh, ${embed.height || 560}px)` }}
         allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
         allowFullScreen
         loading="lazy"
@@ -894,7 +908,7 @@ function ContentEmbedPreview({ content }) {
 function Modal({ title, subtitle, children, onClose }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4" onClick={onClose}>
-      <div className="glass-strong rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
+      <div className="glass-strong rounded-3xl max-w-5xl w-full max-h-[94vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="p-5 border-b border-white/10 flex items-start justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-white">{title}</h2>
@@ -976,13 +990,13 @@ function buildContentEmbed(value, platform) {
   }
   if (lower.includes('instagram.com')) {
     const clean = url.split('?')[0].replace(/\/$/, '')
-    return { kind: 'iframe', src: `${clean}/embed`, height: 620 }
+    return { kind: 'iframe', src: `${clean}/embed`, height: 560 }
   }
   if (lower.includes('facebook.com')) {
     return {
       kind: 'iframe',
       src: `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(url)}&show_text=true&width=500`,
-      height: 620,
+      height: 540,
     }
   }
   if (lower.match(/\.(mp4|webm|mov)(\?|$)/)) {
@@ -1001,10 +1015,28 @@ function extractUrl(value) {
 }
 
 function normalizeEmbeddedIframes(container) {
+  container.querySelectorAll('blockquote').forEach(blockquote => {
+    blockquote.style.maxWidth = '100%'
+    blockquote.style.maxHeight = '100%'
+    blockquote.style.minHeight = '0'
+    blockquote.style.margin = '0 auto'
+    blockquote.style.overflow = 'hidden'
+  })
+  container.querySelectorAll('video').forEach(video => {
+    video.style.maxWidth = '100%'
+    video.style.maxHeight = '100%'
+    video.style.width = 'auto'
+    video.style.height = '100%'
+    video.style.objectFit = 'contain'
+  })
   container.querySelectorAll('iframe').forEach(iframe => {
     iframe.style.maxWidth = '100%'
-    iframe.style.width = '100%'
+    iframe.style.width = 'min(100%, 420px)'
+    iframe.style.height = '100%'
+    iframe.style.maxHeight = '100%'
     iframe.style.border = '0'
+    iframe.style.display = 'block'
+    iframe.style.margin = '0 auto'
     iframe.setAttribute('loading', 'lazy')
     iframe.setAttribute('scrolling', 'no')
   })
