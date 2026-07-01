@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  ArrowLeft, BarChart3, Camera, ChevronRight, Eye, Heart, Loader2, Megaphone,
-  MessageSquare, RefreshCw, Search, Sparkles, Trophy, Users, Wallet,
+  ArrowLeft, BarChart3, CalendarDays, Camera, ChevronRight, Eye, Heart, Loader2,
+  Megaphone, MessageSquare, RefreshCw, Search, Sparkles, Trophy, Users, Wallet,
 } from 'lucide-react'
 import { KPICard, KPICardSkeleton } from '../components/ui/KPICard'
 import { ChartCard, ComparisonBarChart, DistributionDonut } from '../components/ui/Charts'
 import { useInfluencerData } from '../hooks/useInfluencerData'
-import { aggregateContent, aggregatePaid, buildInfluencerRollups, platformColors } from '../utils/influencerMetrics'
+import { aggregateContent, aggregatePaid, buildInfluencerRollups, campaignInfluencerCost, platformColors } from '../utils/influencerMetrics'
 import { formatCurrency, formatDecimal, formatNumber, safeNumber } from '../utils/format'
 
 const brandThemes = {
@@ -26,6 +26,7 @@ const brandThemes = {
 }
 
 const navItems = [
+  { key: 'campaigns', label: 'Campañas', icon: CalendarDays },
   { key: 'overview', label: 'Resumen', icon: BarChart3 },
   { key: 'influencers', label: 'Influencers', icon: Users },
   { key: 'content', label: 'Contenidos', icon: Camera },
@@ -54,6 +55,7 @@ export function InfluencerDashboard() {
     const byPlatform = row => platform === 'all' || row.platform === platform
     const contents = data.contents.filter(row => byCampaign(row) && byPlatform(row))
     const paid = data.paid.filter(row => byCampaign(row) && byPlatform(row))
+    const projections = data.projections.filter(row => campaignId === 'all' || !row.campaignId || row.campaignId === campaignId)
     const influencers = data.influencers.filter(inf =>
       contents.some(row => row.influencerId === inf.id) ||
       paid.some(row => row.influencerId === inf.id) ||
@@ -67,9 +69,46 @@ export function InfluencerDashboard() {
       sentiment: data.sentiment.filter(row => campaignId === 'all' || !row.campaignId || row.campaignId === campaignId),
       organicTotals: aggregateContent(contents),
       paidTotals: aggregatePaid(paid),
-      rollups: buildInfluencerRollups({ influencers, contents, paid, projections: data.projections }),
+      influencerCost: campaignInfluencerCost({ influencers, contents, paid }),
+      projections,
+      rollups: buildInfluencerRollups({ influencers, contents, paid, projections }),
     }
   }, [data, campaignId, platform])
+
+  const campaignSummaries = useMemo(() => {
+    if (!data) return []
+    return data.campaigns.map(campaign => {
+      const contents = data.contents.filter(row => row.campaignId === campaign.id)
+      const paid = data.paid.filter(row => row.campaignId === campaign.id)
+      const influencerIds = new Set([
+        ...contents.map(row => row.influencerId),
+        ...paid.map(row => row.influencerId),
+      ].filter(Boolean))
+      return {
+        ...campaign,
+        organic: aggregateContent(contents),
+        paid: aggregatePaid(paid),
+        influencerCost: campaignInfluencerCost({ influencers: data.influencers, contents, paid }),
+        contentCount: contents.length,
+        influencerCount: influencerIds.size,
+        platforms: [...new Set(contents.map(row => row.platform).filter(Boolean))],
+      }
+    })
+  }, [data])
+
+  const selectedCampaign = useMemo(() => {
+    if (!data) return null
+    if (campaignId === 'all') {
+      return {
+        id: 'all',
+        name: 'Todas las campañas',
+        startDate: minDate(data.campaigns.map(row => row.startDate)),
+        endDate: maxDate(data.campaigns.map(row => row.endDate)),
+        objective: 'Vista consolidada de la marca',
+      }
+    }
+    return data.campaigns.find(row => row.id === campaignId) || null
+  }, [data, campaignId])
 
   if (error) {
     return (
@@ -147,7 +186,10 @@ export function InfluencerDashboard() {
               <LoadingState />
             ) : (
               <>
-                {tab === 'overview' && <Overview data={data} filtered={filtered} theme={theme} onTab={setTab} />}
+                <CampaignRail campaigns={campaignSummaries} selectedId={campaignId} onSelect={setCampaignId} theme={theme} />
+                <CampaignContext campaign={selectedCampaign} filtered={filtered} theme={theme} />
+                {tab === 'campaigns' && <CampaignsView campaigns={campaignSummaries} selectedId={campaignId} onSelect={setCampaignId} theme={theme} />}
+                {tab === 'overview' && <Overview filtered={filtered} campaignSummaries={campaignSummaries} theme={theme} onTab={setTab} onCampaignSelect={setCampaignId} />}
                 {tab === 'influencers' && <InfluencersView rollups={filtered.rollups} theme={theme} onSelect={setSelectedInfluencer} />}
                 {tab === 'content' && <ContentView contents={filtered.contents} query={query} setQuery={setQuery} onSelect={setSelectedContent} />}
                 {tab === 'paid' && <PaidView paid={filtered.paid} totals={filtered.paidTotals} />}
@@ -191,10 +233,155 @@ function LoadingState() {
   )
 }
 
-function Overview({ data, filtered, theme, onTab }) {
+function CampaignRail({ campaigns, selectedId, onSelect, theme }) {
+  const totals = campaigns.reduce((acc, campaign) => {
+    acc.views += safeNumber(campaign.organic.views)
+    acc.paid += safeNumber(campaign.paid.views6s)
+    acc.cost += safeNumber(campaign.influencerCost) + safeNumber(campaign.paid.investment)
+    return acc
+  }, { views: 0, paid: 0, cost: 0 })
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-widest text-white/40 font-semibold">Lectura por campaña</p>
+          <h3 className="text-lg font-bold text-white">Campañas activas y periodos</h3>
+        </div>
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-2">
+        <button
+          onClick={() => onSelect('all')}
+          className={`min-w-[260px] rounded-2xl p-4 text-left border transition-colors ${selectedId === 'all' ? 'bg-white/14 border-white/25' : 'bg-white/6 border-white/10 hover:bg-white/10'}`}
+        >
+          <p className="text-xs uppercase tracking-widest text-white/45">Consolidado</p>
+          <p className="mt-1 font-bold text-white">Todas las campañas</p>
+          <p className="text-xs text-white/45 mt-1">{campaigns.length} campañas</p>
+          <div className="grid grid-cols-3 gap-2 mt-4">
+            <MiniMetric label="Views" value={formatNumber(totals.views)} />
+            <MiniMetric label="Pauta" value={formatNumber(totals.paid)} />
+            <MiniMetric label="Costo" value={formatCurrency(totals.cost)} />
+          </div>
+        </button>
+        {campaigns.map(campaign => {
+          const selected = selectedId === campaign.id
+          const totalCost = safeNumber(campaign.influencerCost) + safeNumber(campaign.paid.investment)
+          return (
+            <button
+              key={campaign.id}
+              onClick={() => onSelect(campaign.id)}
+              className={`min-w-[300px] rounded-2xl p-4 text-left border transition-colors ${selected ? 'bg-white/14 border-white/25' : 'bg-white/6 border-white/10 hover:bg-white/10'}`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${theme.primary}2e`, color: theme.primary }}>
+                  <CalendarDays className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-bold text-white line-clamp-2">{campaign.name}</p>
+                  <p className="text-xs text-white/45 mt-1">{formatDateRange(campaign.startDate, campaign.endDate)}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 mt-4">
+                <MiniMetric label="Views" value={formatNumber(campaign.organic.views)} />
+                <MiniMetric label="Influencers" value={formatNumber(campaign.influencerCount)} />
+                <MiniMetric label="Costo" value={totalCost ? formatCurrency(totalCost) : 'Pend.'} />
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function CampaignContext({ campaign, filtered, theme }) {
+  if (!campaign) return null
+  const paid = filtered.paidTotals
+  const influencerCost = safeNumber(filtered.influencerCost)
+  const totalCost = influencerCost + safeNumber(paid.investment)
+  const organic = filtered.organicTotals
+  const organicCpv = organic.views > 0 && influencerCost > 0 ? influencerCost / organic.views : 0
+  const totalCpv = organic.views + paid.views6s > 0 && totalCost > 0 ? totalCost / (organic.views + paid.views6s) : 0
+
+  return (
+    <section className="rounded-2xl border border-white/10 bg-white/7 p-5">
+      <div className="flex flex-col lg:flex-row lg:items-center gap-5 justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[10px] uppercase tracking-widest text-white/45 font-semibold">Campaña seleccionada</span>
+            {campaign.status && <span className="text-[10px] px-2 py-1 rounded-full bg-white/10 text-white/60">{campaign.status}</span>}
+          </div>
+          <h3 className="text-2xl font-bold text-white font-display">{campaign.name}</h3>
+          <p className="text-sm text-white/55 mt-1">{formatDateRange(campaign.startDate, campaign.endDate)}</p>
+          {campaign.objective && <p className="text-sm text-white/65 mt-3 max-w-3xl">{campaign.objective}</p>}
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 min-w-0 lg:min-w-[560px]">
+          <MiniMetric label="Costo influencers" value={influencerCost ? formatCurrency(influencerCost) : 'Pendiente'} />
+          <MiniMetric label="Inversión pauta" value={paid.investment ? formatCurrency(paid.investment) : '$0'} />
+          <MiniMetric label="Costo total" value={totalCost ? formatCurrency(totalCost) : 'Pendiente'} />
+          <MiniMetric label="CPV total" value={totalCpv ? formatCurrency(totalCpv) : (organicCpv ? formatCurrency(organicCpv) : 'Pendiente')} />
+        </div>
+      </div>
+      <div className="mt-4 h-1.5 rounded-full bg-white/10 overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${paid.investment && totalCost ? Math.min((paid.investment / totalCost) * 100, 100) : 0}%`, background: theme.primary }} />
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-white/45">
+        <span>CPV orgánico: {organicCpv ? formatCurrency(organicCpv) : 'Pendiente'}</span>
+        <span>CPV pauta: {paid.cpv ? formatCurrency(paid.cpv) : '$0'}</span>
+        <span>El costo del influencer queda editable desde la columna Fee Total.</span>
+      </div>
+    </section>
+  )
+}
+
+function CampaignsView({ campaigns, selectedId, onSelect, theme }) {
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+      {campaigns.map(campaign => {
+        const selected = campaign.id === selectedId
+        const influencerCost = safeNumber(campaign.influencerCost)
+        const paidInvestment = safeNumber(campaign.paid.investment)
+        const totalCost = influencerCost + paidInvestment
+        const organicCpv = campaign.organic.views > 0 && influencerCost > 0 ? influencerCost / campaign.organic.views : 0
+        return (
+          <button
+            key={campaign.id}
+            onClick={() => onSelect(campaign.id)}
+            className={`glass-card rounded-2xl p-5 text-left border ${selected ? 'border-white/30' : 'border-white/10'}`}
+          >
+            <div className="flex items-start gap-3 mb-5">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: `${theme.primary}2e`, color: theme.primary }}>
+                <CalendarDays className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-bold text-white text-lg">{campaign.name}</h3>
+                <p className="text-xs text-white/45 mt-1">{formatDateRange(campaign.startDate, campaign.endDate)}</p>
+              </div>
+              <span className="text-[10px] uppercase rounded-full px-2 py-1 bg-white/10 text-white/55">{campaign.status || 'Campaña'}</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <MiniMetric label="Views org." value={formatNumber(campaign.organic.views)} />
+              <MiniMetric label="Views pauta" value={formatNumber(campaign.paid.views6s)} />
+              <MiniMetric label="Contenidos" value={formatNumber(campaign.contentCount)} />
+              <MiniMetric label="Influencers" value={formatNumber(campaign.influencerCount)} />
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+              <MiniMetric label="Costo influencers" value={influencerCost ? formatCurrency(influencerCost) : 'Pendiente'} />
+              <MiniMetric label="Pauta" value={paidInvestment ? formatCurrency(paidInvestment) : '$0'} />
+              <MiniMetric label="Costo total" value={totalCost ? formatCurrency(totalCost) : 'Pendiente'} />
+              <MiniMetric label="CPV org." value={organicCpv ? formatCurrency(organicCpv) : 'Pendiente'} />
+            </div>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function Overview({ filtered, campaignSummaries, theme, onTab, onCampaignSelect }) {
   const organic = filtered.organicTotals
   const paid = filtered.paidTotals
-  const totalInvestment = safeNumber(data.totals.investmentOrganic) + safeNumber(paid.investment)
+  const totalInvestment = safeNumber(filtered.influencerCost) + safeNumber(paid.investment)
   const platformData = Object.entries(groupBy(filtered.contents, 'platform')).map(([name, rows]) => ({
     name,
     value: aggregateContent(rows).views,
@@ -205,6 +392,20 @@ function Overview({ data, filtered, theme, onTab }) {
     Views: inf.organic.views,
     Interacciones: inf.organic.interactions,
   }))
+  const topCampaigns = campaignSummaries
+    .map(campaign => {
+      const influencerCost = safeNumber(campaign.influencerCost)
+      const paidInvestment = safeNumber(campaign.paid.investment)
+      const totalCost = influencerCost + paidInvestment
+      const totalViews = safeNumber(campaign.organic.views) + safeNumber(campaign.paid.views6s)
+      const organicCpv = influencerCost > 0 && campaign.organic.views > 0 ? influencerCost / campaign.organic.views : null
+      const paidCpv = paidInvestment > 0 && campaign.paid.views6s > 0 ? paidInvestment / campaign.paid.views6s : null
+      const totalCpv = totalCost > 0 && totalViews > 0 ? totalCost / totalViews : null
+      return { ...campaign, totalCost, totalViews, organicCpv, paidCpv, totalCpv }
+    })
+    .filter(campaign => campaign.organic.views > 0 || campaign.paid.views6s > 0)
+    .sort((a, b) => (a.totalCpv ?? a.organicCpv ?? Infinity) - (b.totalCpv ?? b.organicCpv ?? Infinity))
+    .slice(0, 4)
 
   return (
     <div className="space-y-6">
@@ -251,6 +452,38 @@ function Overview({ data, filtered, theme, onTab }) {
             </div>
           </button>
         ))}
+      </div>
+
+      <div className="glass-card rounded-2xl p-5">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="font-bold text-white">Top campañas por CPV</h3>
+            <p className="text-xs text-white/45 mt-1">Ranking de eficiencia con costo de influencer, pauta y costo total.</p>
+          </div>
+          <CalendarDays className="w-5 h-5" style={{ color: theme.primary }} />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {topCampaigns.map((campaign, index) => (
+            <button key={campaign.id} onClick={() => onCampaignSelect(campaign.id)} className="rounded-xl bg-white/5 border border-white/10 p-4 text-left hover:bg-white/10 transition-colors">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold" style={{ background: `${theme.primary}2e`, color: theme.primary }}>
+                  {index + 1}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-white line-clamp-2">{campaign.name}</p>
+                  <p className="text-xs text-white/45 mt-1">{formatDateRange(campaign.startDate, campaign.endDate)}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-4 gap-2 mt-4">
+                <MiniMetric label="CPV total" value={campaign.totalCpv !== null ? formatCurrency(campaign.totalCpv) : 'Pend.'} />
+                <MiniMetric label="CPV org." value={campaign.organicCpv !== null ? formatCurrency(campaign.organicCpv) : 'Pend.'} />
+                <MiniMetric label="CPV pauta" value={campaign.paidCpv !== null ? formatCurrency(campaign.paidCpv) : '$0'} />
+                <MiniMetric label="Views" value={formatNumber(campaign.totalViews)} />
+              </div>
+            </button>
+          ))}
+          {!topCampaigns.length && <EmptyState title="Sin campañas rankeables" text="Agrega views y costos para calcular CPV por campaña." />}
+        </div>
       </div>
     </div>
   )
@@ -506,6 +739,29 @@ function groupBy(rows, key) {
     acc[value].push(row)
     return acc
   }, {})
+}
+
+function minDate(values = []) {
+  const dates = values.filter(Boolean).sort()
+  return dates[0] || ''
+}
+
+function maxDate(values = []) {
+  const dates = values.filter(Boolean).sort()
+  return dates[dates.length - 1] || ''
+}
+
+function formatDateRange(startDate, endDate) {
+  if (startDate && endDate && startDate !== endDate) return `${formatShortDate(startDate)} - ${formatShortDate(endDate)}`
+  if (startDate || endDate) return formatShortDate(startDate || endDate)
+  return 'Periodo pendiente'
+}
+
+function formatShortDate(value) {
+  if (!value) return ''
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
 }
 
 function toDrivePreview(url) {

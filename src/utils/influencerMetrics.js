@@ -110,8 +110,19 @@ export function aggregatePaid(rows = []) {
   return total
 }
 
+export function campaignInfluencerCost({ influencers = [], contents = [], paid = [] }) {
+  const activeInfluencerIds = new Set([
+    ...contents.map(row => row.influencerId),
+    ...paid.map(row => row.influencerId),
+  ].filter(Boolean))
+  return influencers.reduce((sum, influencer) => {
+    if (!activeInfluencerIds.has(influencer.id)) return sum
+    return sum + safeNumber(influencer.fee)
+  }, 0)
+}
+
 export function buildInfluencerRollups({ influencers = [], contents = [], paid = [], projections = [] }) {
-  const projectionsByInfluencer = new Map(projections.map(p => [p.influencerId, p]))
+  const projectionsByInfluencer = new Map(projections.map(p => [`${p.campaignId || ''}|${p.influencerId}`, p]))
   return influencers.map(influencer => {
     const influencerContents = contents.filter(row => row.influencerId === influencer.id)
     const influencerPaid = paid.filter(row => row.influencerId === influencer.id)
@@ -120,7 +131,8 @@ export function buildInfluencerRollups({ influencers = [], contents = [], paid =
     const fee = safeNumber(influencer.fee)
     const cpv = organic.views > 0 ? fee / organic.views : 0
     const cpi = organic.interactions > 0 ? fee / organic.interactions : 0
-    const projection = projectionsByInfluencer.get(influencer.id) || {}
+    const campaignIds = [...new Set(influencerContents.map(row => row.campaignId).filter(Boolean))]
+    const projection = projectionsByInfluencer.get(`${campaignIds[0] || ''}|${influencer.id}`) || projections.find(p => p.influencerId === influencer.id) || {}
     const planned = safeNumber(projection.ttVideosPlan) + safeNumber(projection.igReelsPlan) + safeNumber(projection.fbReelsPlan) + safeNumber(projection.igStoriesPlan) + safeNumber(projection.fbStoriesPlan)
     return {
       ...influencer,
