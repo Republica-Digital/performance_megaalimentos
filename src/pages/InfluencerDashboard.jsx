@@ -39,7 +39,7 @@ export function InfluencerDashboard() {
   const { marcaId } = useParams()
   const navigate = useNavigate()
   const { data, loading, error, refresh, sheetBrandId } = useInfluencerData(marcaId)
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState('campaigns')
   const [campaignId, setCampaignId] = useState('all')
   const [platform, setPlatform] = useState('all')
   const [query, setQuery] = useState('')
@@ -80,15 +80,21 @@ export function InfluencerDashboard() {
     return data.campaigns.map(campaign => {
       const contents = data.contents.filter(row => row.campaignId === campaign.id)
       const paid = data.paid.filter(row => row.campaignId === campaign.id)
+      const projections = data.projections.filter(row => !row.campaignId || row.campaignId === campaign.id)
       const influencerIds = new Set([
         ...contents.map(row => row.influencerId),
         ...paid.map(row => row.influencerId),
       ].filter(Boolean))
+      const influencers = data.influencers.filter(inf => influencerIds.has(inf.id))
       return {
         ...campaign,
+        contents,
+        paidRows: paid,
+        influencers,
         organic: aggregateContent(contents),
         paid: aggregatePaid(paid),
         influencerCost: campaignInfluencerCost({ influencers: data.influencers, contents, paid }),
+        rollups: buildInfluencerRollups({ influencers, contents, paid, projections }),
         contentCount: contents.length,
         influencerCount: influencerIds.size,
         platforms: [...new Set(contents.map(row => row.platform).filter(Boolean))],
@@ -188,7 +194,7 @@ export function InfluencerDashboard() {
               <>
                 <CampaignRail campaigns={campaignSummaries} selectedId={campaignId} onSelect={setCampaignId} theme={theme} />
                 <CampaignContext campaign={selectedCampaign} filtered={filtered} theme={theme} />
-                {tab === 'campaigns' && <CampaignsView campaigns={campaignSummaries} selectedId={campaignId} onSelect={setCampaignId} theme={theme} />}
+                {tab === 'campaigns' && <CampaignsView campaigns={campaignSummaries} selectedId={campaignId} onSelect={setCampaignId} onContentSelect={setSelectedContent} theme={theme} />}
                 {tab === 'overview' && <Overview filtered={filtered} campaignSummaries={campaignSummaries} theme={theme} onTab={setTab} onCampaignSelect={setCampaignId} />}
                 {tab === 'influencers' && <InfluencersView rollups={filtered.rollups} theme={theme} onSelect={setSelectedInfluencer} />}
                 {tab === 'content' && <ContentView contents={filtered.contents} query={query} setQuery={setQuery} onSelect={setSelectedContent} />}
@@ -334,47 +340,159 @@ function CampaignContext({ campaign, filtered, theme }) {
   )
 }
 
-function CampaignsView({ campaigns, selectedId, onSelect, theme }) {
+function CampaignsView({ campaigns, selectedId, onSelect, onContentSelect, theme }) {
+  const activeCampaigns = campaigns.filter(campaign =>
+    campaign.contentCount > 0 || campaign.paid.views6s > 0 || campaign.paid.investment > 0
+  )
+  const visibleCampaigns = selectedId === 'all'
+    ? (activeCampaigns.length ? activeCampaigns : campaigns)
+    : campaigns.filter(campaign => campaign.id === selectedId)
+
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-      {campaigns.map(campaign => {
-        const selected = campaign.id === selectedId
-        const influencerCost = safeNumber(campaign.influencerCost)
-        const paidInvestment = safeNumber(campaign.paid.investment)
-        const totalCost = influencerCost + paidInvestment
-        const organicCpv = campaign.organic.views > 0 && influencerCost > 0 ? influencerCost / campaign.organic.views : 0
-        return (
+    <div className="space-y-5">
+      <section className="rounded-2xl border border-white/10 bg-white/7 p-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-white/40 font-semibold">Vista por campana</p>
+            <h3 className="text-xl font-bold text-white">Cada campana queda separada por periodo, costo y contenido</h3>
+          </div>
           <button
-            key={campaign.id}
-            onClick={() => onSelect(campaign.id)}
-            className={`glass-card rounded-2xl p-5 text-left border ${selected ? 'border-white/30' : 'border-white/10'}`}
+            onClick={() => onSelect('all')}
+            className={`px-4 py-2 rounded-xl text-sm font-semibold border ${selectedId === 'all' ? 'bg-white text-zinc-950 border-white' : 'bg-white/6 text-white/70 border-white/10 hover:bg-white/10'}`}
           >
-            <div className="flex items-start gap-3 mb-5">
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: `${theme.primary}2e`, color: theme.primary }}>
-                <CalendarDays className="w-5 h-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="font-bold text-white text-lg">{campaign.name}</h3>
-                <p className="text-xs text-white/45 mt-1">{formatDateRange(campaign.startDate, campaign.endDate)}</p>
-              </div>
-              <span className="text-[10px] uppercase rounded-full px-2 py-1 bg-white/10 text-white/55">{campaign.status || 'Campaña'}</span>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <MiniMetric label="Views org." value={formatNumber(campaign.organic.views)} />
-              <MiniMetric label="Views pauta" value={formatNumber(campaign.paid.views6s)} />
-              <MiniMetric label="Contenidos" value={formatNumber(campaign.contentCount)} />
-              <MiniMetric label="Influencers" value={formatNumber(campaign.influencerCount)} />
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
-              <MiniMetric label="Costo influencers" value={influencerCost ? formatCurrency(influencerCost) : 'Pendiente'} />
-              <MiniMetric label="Pauta" value={paidInvestment ? formatCurrency(paidInvestment) : '$0'} />
-              <MiniMetric label="Costo total" value={totalCost ? formatCurrency(totalCost) : 'Pendiente'} />
-              <MiniMetric label="CPV org." value={organicCpv ? formatCurrency(organicCpv) : 'Pendiente'} />
-            </div>
+            Ver todas
           </button>
-        )
-      })}
+        </div>
+        <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+          {campaigns.map(campaign => (
+            <button
+              key={campaign.id}
+              onClick={() => onSelect(campaign.id)}
+              className={`min-w-[220px] rounded-xl p-3 text-left border transition-colors ${selectedId === campaign.id ? 'bg-white/16 border-white/30' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
+            >
+              <p className="font-bold text-white truncate">{campaign.name}</p>
+              <p className="text-xs text-white/45 mt-1">{formatDateRange(campaign.startDate, campaign.endDate)}</p>
+              <p className="text-[11px] text-white/45 mt-2">{formatNumber(campaign.contentCount)} contenidos</p>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {visibleCampaigns.map(campaign => (
+        <CampaignPanel
+          key={campaign.id}
+          campaign={campaign}
+          selected={selectedId === campaign.id}
+          onSelect={onSelect}
+          onContentSelect={onContentSelect}
+          theme={theme}
+        />
+      ))}
     </div>
+  )
+}
+
+function CampaignPanel({ campaign, selected, onSelect, onContentSelect, theme }) {
+  const influencerCost = safeNumber(campaign.influencerCost)
+  const paidInvestment = safeNumber(campaign.paid.investment)
+  const totalCost = influencerCost + paidInvestment
+  const totalViews = safeNumber(campaign.organic.views) + safeNumber(campaign.paid.views6s)
+  const organicCpv = campaign.organic.views > 0 && influencerCost > 0 ? influencerCost / campaign.organic.views : 0
+  const paidCpv = campaign.paid.views6s > 0 && paidInvestment > 0 ? paidInvestment / campaign.paid.views6s : 0
+  const totalCpv = totalViews > 0 && totalCost > 0 ? totalCost / totalViews : 0
+  const topContents = [...campaign.contents].sort((a, b) => safeNumber(b.views) - safeNumber(a.views)).slice(0, 6)
+  const topInfluencers = campaign.rollups.slice(0, 4)
+
+  return (
+    <section className={`glass-card rounded-2xl border ${selected ? 'border-white/30' : 'border-white/10'} overflow-hidden`}>
+      <div className="p-5 border-b border-white/10">
+        <div className="flex flex-col xl:flex-row xl:items-start justify-between gap-5">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="text-[10px] uppercase tracking-widest text-white/45 font-semibold">Campana</span>
+              <span className="text-[10px] rounded-full px-2 py-1 bg-white/10 text-white/55">{campaign.status || 'Activa'}</span>
+              {campaign.platforms?.map(platformName => (
+                <span key={platformName} className="text-[10px] rounded-full px-2 py-1 bg-white/8 text-white/50">{platformName}</span>
+              ))}
+            </div>
+            <button onClick={() => onSelect(campaign.id)} className="text-left">
+              <h3 className="text-2xl font-bold text-white font-display">{campaign.name}</h3>
+            </button>
+            <p className="text-sm text-white/55 mt-1">{formatDateRange(campaign.startDate, campaign.endDate)}</p>
+            {campaign.objective && <p className="text-sm text-white/65 mt-3 max-w-3xl">{campaign.objective}</p>}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 xl:min-w-[560px]">
+            <MiniMetric label="Views org." value={formatNumber(campaign.organic.views)} />
+            <MiniMetric label="Views pauta" value={formatNumber(campaign.paid.views6s)} />
+            <MiniMetric label="Contenidos" value={formatNumber(campaign.contentCount)} />
+            <MiniMetric label="Colaboradores" value={formatNumber(campaign.influencerCount)} />
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-5">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-2">
+          <MiniMetric label="Costo influencers" value={influencerCost ? formatCurrency(influencerCost) : 'Pendiente'} />
+          <MiniMetric label="Pauta" value={paidInvestment ? formatCurrency(paidInvestment) : '$0'} />
+          <MiniMetric label="Costo total" value={totalCost ? formatCurrency(totalCost) : 'Pendiente'} />
+          <MiniMetric label="CPV organico" value={organicCpv ? formatCurrency(organicCpv) : 'Pendiente'} />
+          <MiniMetric label="CPV pauta" value={paidCpv ? formatCurrency(paidCpv) : '$0'} />
+          <MiniMetric label="CPV total" value={totalCpv ? formatCurrency(totalCpv) : 'Pendiente'} />
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-5 gap-5">
+          <div className="xl:col-span-2 rounded-2xl bg-white/5 border border-white/10 p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <Users className="w-4 h-4" style={{ color: theme.primary }} />
+              <h4 className="font-bold text-white">Colaboradores de esta campana</h4>
+            </div>
+            <div className="space-y-3">
+              {topInfluencers.length ? topInfluencers.map(influencer => (
+                <div key={influencer.id} className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/10 p-3">
+                  {influencer.photo ? (
+                    <img src={influencer.photo} alt={influencer.name} className="w-10 h-10 rounded-full object-cover bg-white/10" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-sm font-bold text-white/60">{influencer.name?.slice(0, 1) || '?'}</div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-white truncate">{influencer.name}</p>
+                    <p className="text-xs text-white/45">{formatNumber(influencer.contents.length)} contenidos · CPV {influencer.cpv ? formatCurrency(influencer.cpv) : 'Pendiente'}</p>
+                  </div>
+                  <span className="text-sm font-mono text-white">{formatNumber(influencer.organic.views)}</span>
+                </div>
+              )) : <EmptyState title="Sin colaboradores" text="Agrega contenidos o pauta asociados a esta campana." />}
+            </div>
+          </div>
+
+          <div className="xl:col-span-3 rounded-2xl bg-white/5 border border-white/10 p-4">
+            <div className="flex items-center gap-2 mb-4">
+              <Camera className="w-4 h-4" style={{ color: theme.primary }} />
+              <h4 className="font-bold text-white">Contenidos de esta campana</h4>
+            </div>
+            <div className="space-y-2">
+              {topContents.length ? topContents.map(content => (
+                <button
+                  key={content.uid}
+                  onClick={() => onContentSelect(content)}
+                  className="w-full rounded-xl bg-white/5 border border-white/10 p-3 text-left hover:bg-white/10 transition-colors"
+                >
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-white truncate">{content.influencerName || content.influencerId}</p>
+                      <p className="text-xs text-white/45">{content.platform} · {content.format} · {content.publishDate || 'Sin fecha'}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 md:min-w-[220px]">
+                      <MiniMetric label="Views" value={formatNumber(content.views)} />
+                      <MiniMetric label="Interacciones" value={formatNumber(safeNumber(content.reactions) + safeNumber(content.comments) + safeNumber(content.shares) + safeNumber(content.saves))} />
+                    </div>
+                  </div>
+                </button>
+              )) : <EmptyState title="Sin contenidos" text="Esta campana aun no tiene contenidos organicos cargados." />}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }
 
