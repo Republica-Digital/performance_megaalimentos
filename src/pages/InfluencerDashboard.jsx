@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   ArrowLeft, BarChart3, CalendarDays, Camera, ChevronRight, Eye, Heart, Loader2,
@@ -686,6 +686,7 @@ function InfluencerModal({ influencer, onClose }) {
 function ContentModal({ content, onClose }) {
   return (
     <Modal title={`${content.influencerName || content.influencerId} · ${content.format}`} subtitle={content.publishDate} onClose={onClose}>
+      <ContentEmbedPreview content={content} />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <MiniMetric label="Views" value={formatNumber(content.views)} />
         <MiniMetric label="Reacciones" value={formatNumber(content.reactions)} />
@@ -694,6 +695,81 @@ function ContentModal({ content, onClose }) {
       </div>
       {content.url && !content.url.includes('<') && <a href={content.url} target="_blank" rel="noreferrer" className="inline-flex px-4 py-2 rounded-xl bg-white text-zinc-950 text-sm font-semibold">Abrir contenido</a>}
     </Modal>
+  )
+}
+
+function ContentEmbedPreview({ content }) {
+  const ref = useRef(null)
+  const [failed, setFailed] = useState(false)
+  const rawUrl = content?.url || content?.localVideoUrl || ''
+  const embed = useMemo(() => buildContentEmbed(rawUrl, content?.platform), [rawUrl, content?.platform])
+
+  useEffect(() => {
+    setFailed(false)
+  }, [rawUrl])
+
+  useEffect(() => {
+    if (!embed || embed.kind !== 'html' || !ref.current) return
+    ref.current.innerHTML = embed.html
+    normalizeEmbeddedIframes(ref.current)
+
+    const html = embed.html.toLowerCase()
+    if (html.includes('instagram')) {
+      loadExternalScript('ig-embed', 'https://www.instagram.com/embed.js')
+        .then(() => window.instgrm?.Embeds?.process(ref.current))
+        .catch(() => setFailed(true))
+    }
+    if (html.includes('tiktok')) {
+      loadExternalScript('tt-embed', 'https://www.tiktok.com/embed.js')
+        .catch(() => setFailed(true))
+    }
+    if (html.includes('fb-post') || html.includes('facebook')) {
+      loadExternalScript('fb-embed', 'https://connect.facebook.net/es_LA/sdk.js#xfbml=1&version=v19.0')
+        .then(() => window.FB?.XFBML?.parse(ref.current))
+        .catch(() => setFailed(true))
+    }
+  }, [embed])
+
+  if (!rawUrl) {
+    return (
+      <div className="mb-5 rounded-2xl bg-black/25 border border-white/10 aspect-video flex items-center justify-center text-sm text-white/40">
+        Sin video embebido
+      </div>
+    )
+  }
+
+  if (failed || !embed) {
+    return (
+      <div className="mb-5 rounded-2xl bg-black/25 border border-white/10 p-5 text-center">
+        <p className="text-sm font-semibold text-white">No se pudo mostrar el embed</p>
+        <a href={extractUrl(rawUrl)} target="_blank" rel="noreferrer" className="mt-3 inline-flex px-4 py-2 rounded-xl bg-white text-zinc-950 text-sm font-semibold">
+          Abrir contenido
+        </a>
+      </div>
+    )
+  }
+
+  if (embed.kind === 'html') {
+    return (
+      <div className="mb-5 rounded-2xl bg-black/25 border border-white/10 overflow-hidden">
+        <div ref={ref} className="min-h-[520px] flex items-start justify-center p-3" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="mb-5 rounded-2xl bg-black/25 border border-white/10 overflow-hidden">
+      <iframe
+        src={embed.src}
+        title={`${content.platform || 'Contenido'} embed`}
+        className="w-full border-0 bg-white"
+        style={{ height: embed.height || 560 }}
+        allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+        allowFullScreen
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+    </div>
   )
 }
 
@@ -762,6 +838,75 @@ function formatShortDate(value) {
   const date = new Date(`${value}T00:00:00`)
   if (Number.isNaN(date.getTime())) return value
   return new Intl.DateTimeFormat('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
+}
+
+function buildContentEmbed(value, platform) {
+  const raw = String(value || '').trim()
+  if (!raw) return null
+  if (raw.startsWith('<')) return { kind: 'html', html: raw }
+
+  const url = extractUrl(raw)
+  const lower = url.toLowerCase()
+  if (lower.includes('tiktok.com')) {
+    const videoId = url.match(/video\/(\d+)/)?.[1]
+    if (videoId) {
+      return {
+        kind: 'html',
+        html: `<blockquote class="tiktok-embed" cite="${url}" data-video-id="${videoId}" style="max-width:420px;min-width:280px;margin:0 auto;"><section></section></blockquote>`,
+      }
+    }
+  }
+  if (lower.includes('instagram.com')) {
+    const clean = url.split('?')[0].replace(/\/$/, '')
+    return { kind: 'iframe', src: `${clean}/embed`, height: 620 }
+  }
+  if (lower.includes('facebook.com')) {
+    return {
+      kind: 'iframe',
+      src: `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(url)}&show_text=true&width=500`,
+      height: 620,
+    }
+  }
+  if (lower.match(/\.(mp4|webm|mov)(\?|$)/)) {
+    return { kind: 'html', html: `<video src="${url}" controls playsinline style="width:100%;max-height:620px;border-radius:12px;background:#000;"></video>` }
+  }
+  if (platform && /tiktok/i.test(platform)) return null
+  return { kind: 'iframe', src: url, height: 560 }
+}
+
+function extractUrl(value) {
+  const raw = String(value || '').trim()
+  const href = raw.match(/href=["']([^"']+)["']/i)?.[1]
+  const cite = raw.match(/cite=["']([^"']+)["']/i)?.[1]
+  const src = raw.match(/src=["']([^"']+)["']/i)?.[1]
+  return href || cite || src || raw
+}
+
+function normalizeEmbeddedIframes(container) {
+  container.querySelectorAll('iframe').forEach(iframe => {
+    iframe.style.maxWidth = '100%'
+    iframe.style.width = '100%'
+    iframe.style.border = '0'
+    iframe.setAttribute('loading', 'lazy')
+    iframe.setAttribute('scrolling', 'no')
+  })
+}
+
+function loadExternalScript(id, src) {
+  return new Promise((resolve, reject) => {
+    const existing = document.getElementById(id)
+    if (existing) {
+      resolve(existing)
+      return
+    }
+    const script = document.createElement('script')
+    script.id = id
+    script.src = src
+    script.async = true
+    script.onload = () => resolve(script)
+    script.onerror = reject
+    document.body.appendChild(script)
+  })
 }
 
 function toDrivePreview(url) {
