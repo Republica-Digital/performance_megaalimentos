@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowRight, BarChart3, Sparkles, Users } from 'lucide-react'
 import Papa from 'papaparse'
+import { influencerRouteSlug } from '../utils/influencerMetrics'
 import { normalizeImageUrl } from '../utils/urls'
 
 const SHEET_ID = import.meta.env.VITE_SHEET_ID
@@ -200,7 +201,7 @@ export function BrandSelector() {
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
                 <button
-                  onClick={() => navigate(`/influencers/${brand.marca_id}`)}
+                  onClick={() => navigate(`/influencers/${influencerRouteSlug(brand.marca_id)}`)}
                   className="flex items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider py-2.5 px-4 rounded-xl bg-white/10 border border-white/15 text-white transition-all duration-300 hover:bg-white/15"
                 >
                   <span className="inline-flex items-center gap-2"><Users className="w-3.5 h-3.5" /> Influencers</span>

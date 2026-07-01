@@ -55,9 +55,22 @@ Pestañas requeridas:
 3. Vercel detecta Vite automáticamente.
 4. En **Environment Variables** agrega:
    - `VITE_SHEET_ID` = el ID de tu Google Sheet
+   - `VITE_INFLUENCERS_SHEET_ID` = `1tN3OamHgUFrIq2kn8XweLBrOTtcd86iC6oAIXvZgiWM`
 5. **Deploy**.
 
 El Google Sheet debe estar **"Publicado en la web"** (Archivo → Compartir → Publicar en la web → toda la hoja → CSV).
+
+## Dashboard de influencers
+
+El dashboard de influencers vive en rutas separadas por marca:
+
+| Marca | Ruta |
+|---|---|
+| La Botanera | `/influencers/botanera` |
+| Chamoy Mega | `/influencers/chamoy-mega` |
+| Pacific Mix | `/influencers/pacific-mix` |
+
+La fuente de datos final es el Google Sheet `1tN3OamHgUFrIq2kn8XweLBrOTtcd86iC6oAIXvZgiWM`. Si `VITE_INFLUENCERS_SHEET_ID` no existe en el entorno, el fallback esta configurado en `src/utils/influencerMetrics.js`.
 
 ---
 

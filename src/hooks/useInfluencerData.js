@@ -2,16 +2,30 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Papa from 'papaparse'
 import { safeNumber } from '../utils/format'
 import {
-  BRAND_TO_INFLUENCER_ID,
   INFLUENCER_SHEET_ID,
-  aggregateContent,
   aggregatePaid,
-  buildInfluencerRollups,
-  defaultCampaignForBrand,
+  brandFromRoute,
+  buildBrandTotals,
+  buildCampaignBundle,
+  drivePreview,
+  isSameBrand,
+  localInfluencerPhoto,
   normalizeDate,
   normalizeDriveImage,
   readField,
+  yes,
 } from '../utils/influencerMetrics'
+
+const SHEETS = {
+  campaigns: '01_Campañas',
+  influencers: '02_Influencers_Campaña',
+  contents: '03_Contenidos',
+  paidTikTok: '04_Pauta_TikTok',
+  paidMeta: '05_Pauta_Meta',
+  sentiment: '06_Sentiment_Campaña',
+  evidences: '07_Sentiment_Evidencias',
+  findings: '08_Hallazgos',
+}
 
 function getSheetURL(sheetName) {
   return `https://docs.google.com/spreadsheets/d/${INFLUENCER_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`
@@ -33,173 +47,291 @@ async function fetchSheet(sheetName, optional = false) {
   }
 }
 
-function normalizeBrand(row) {
-  return {
-    id: String(readField(row, ['ID', 'marca_id'])).trim().toUpperCase(),
-    name: String(readField(row, ['Nombre', 'marca'])).trim(),
-    startDate: normalizeDate(readField(row, ['Fecha Inicio', 'fecha_inicio'])),
-    endDate: normalizeDate(readField(row, ['Fecha Fin', 'fecha_fin'])),
-    color: readField(row, ['Color', 'color_primario'], ''),
-  }
-}
-
-function normalizeCampaign(row, brand) {
-  const id = String(readField(row, ['campana_id', 'campaña_id', 'ID', 'Campaña ID'], '')).trim()
+function normalizeCampaign(row) {
+  const id = String(readField(row, ['campaign_id'])).trim()
   if (!id) return null
   return {
     id,
-    marcaId: String(readField(row, ['marca_id', 'Marca ID'], brand?.id || '')).trim().toUpperCase(),
-    name: String(readField(row, ['nombre_campana', 'nombre_campaña', 'Campaña', 'Nombre'], id)).trim(),
-    startDate: normalizeDate(readField(row, ['fecha_inicio', 'Fecha Inicio'])),
-    endDate: normalizeDate(readField(row, ['fecha_fin', 'Fecha Fin'])),
-    objective: String(readField(row, ['objetivo', 'Objective'], '')).trim(),
-    status: String(readField(row, ['estatus', 'Estado'], '')).trim(),
+    campaignId: id,
+    brandName: String(readField(row, ['marca'])).trim(),
+    name: String(readField(row, ['nombre_campaña', 'nombre_campana'], id)).trim(),
+    startDate: normalizeDate(readField(row, ['fecha_inicio'])),
+    endDate: normalizeDate(readField(row, ['fecha_fin'])),
+    objective: String(readField(row, ['objetivo'])).trim(),
+    type: String(readField(row, ['tipo_campaña', 'tipo_campana'])).trim(),
+    status: String(readField(row, ['estatus'])).trim(),
+    description: String(readField(row, ['descripcion_campaña', 'descripcion_campana'])).trim(),
+    includesPaid: yes(readField(row, ['incluye_pauta'])),
+    dashboardVisible: yes(readField(row, ['dashboard_visible'])),
+    internalNotes: String(readField(row, ['notas_internas'])).trim(),
   }
 }
 
 function normalizeInfluencer(row) {
-  const id = String(readField(row, ['ID', 'influencer_id'])).trim()
-  const sheetPhoto = normalizeDriveImage(readField(row, ['Foto URL', 'foto_url']))
+  const id = String(readField(row, ['influencer_campaign_id'])).trim()
+  if (!id) return null
+  const photo = normalizeDriveImage(readField(row, ['photo_url'])) || localInfluencerPhoto(id) || localInfluencerPhoto(readField(row, ['influencer_name']))
   return {
     id,
-    marcaId: String(readField(row, ['Marca ID', 'marca_id'])).trim().toUpperCase(),
-    name: String(readField(row, ['Nombre', 'Influencer'])).trim(),
-    tiktok: String(readField(row, ['Handle TikTok', 'handle_tiktok'])).trim(),
-    instagram: String(readField(row, ['Handle Instagram', 'handle_instagram'])).trim(),
-    facebook: String(readField(row, ['Handle Facebook', 'handle_facebook'])).trim(),
-    followersTikTok: safeNumber(readField(row, ['Seguidores TikTok'])),
-    followersInstagram: safeNumber(readField(row, ['Seguidores Instagram'])),
-    followersFacebook: safeNumber(readField(row, ['Seguidores Facebook'])),
-    category: String(readField(row, ['Categoría', 'Categoria', 'category'])).trim(),
-    photo: sheetPhoto || localInfluencerPhoto(id),
-    fee: safeNumber(readField(row, ['Fee Total', 'fee_total', 'fee'])),
-    notes: String(readField(row, ['Notas', 'notes'])).trim(),
+    influencerCampaignId: id,
+    campaignId: String(readField(row, ['campaign_id'])).trim(),
+    campaignName: String(readField(row, ['campaign_name'])).trim(),
+    brandName: String(readField(row, ['marca'])).trim(),
+    name: String(readField(row, ['influencer_name'])).trim(),
+    niche: String(readField(row, ['niche'])).trim(),
+    photo,
+    usernames: {
+      TikTok: String(readField(row, ['username_tiktok'])).trim(),
+      Instagram: String(readField(row, ['username_instagram'])).trim(),
+      Facebook: String(readField(row, ['username_facebook'])).trim(),
+      YouTube: String(readField(row, ['username_youtube'])).trim(),
+    },
+    followers: {
+      TikTok: safeNumber(readField(row, ['followers_tiktok_at_campaign'])),
+      Instagram: safeNumber(readField(row, ['followers_instagram_at_campaign'])),
+      Facebook: safeNumber(readField(row, ['followers_facebook_at_campaign'])),
+      YouTube: safeNumber(readField(row, ['followers_youtube_at_campaign'])),
+    },
+    netFee: safeNumber(readField(row, ['net_fee'])),
+    currency: String(readField(row, ['currency'], 'MXN')).trim() || 'MXN',
+    platforms: String(readField(row, ['participation_platforms'])).split(',').map(item => item.trim()).filter(Boolean),
+    planned: {
+      TikTok: safeNumber(readField(row, ['planned_tiktok_contents'])),
+      Instagram: safeNumber(readField(row, ['planned_instagram_contents'])),
+      Facebook: safeNumber(readField(row, ['planned_facebook_contents'])),
+      YouTube: safeNumber(readField(row, ['planned_youtube_contents'])),
+      total: safeNumber(readField(row, ['planned_total_contents'])),
+    },
+    collaborationType: String(readField(row, ['collaboration_type'])).trim(),
+    deliveryStatus: String(readField(row, ['delivery_status'])).trim(),
+    projectedViews: safeNumber(readField(row, ['projected_views'])),
+    projectedInteractions: safeNumber(readField(row, ['projected_interactions'])),
+    projectedEr: safeNumber(readField(row, ['projected_er'])),
+    projectedCpv: safeNumber(readField(row, ['projected_cpv'])),
+    projectedReach: safeNumber(readField(row, ['projected_reach'])),
+    projectionNotes: String(readField(row, ['projection_notes'])).trim(),
+    internalNotes: String(readField(row, ['internal_notes'])).trim(),
   }
 }
 
-function localInfluencerPhoto(id) {
-  const photos = {
-    aldotdenigris: '/influencers/aldotdenigris.png',
-    bastiandelfin: '/influencers/bastiandelfin.png',
-    guszapiain: '/influencers/guszapiain.png',
-  }
-  return photos[id] || ''
-}
-
-function normalizeContent(row, fallbackCampaignId) {
-  const nomenclature = String(readField(row, ['Nomenclatura', 'contenido_uid'])).trim()
-  const contentId = String(readField(row, ['contenido_id', 'ID Contenido'], nomenclature)).trim()
+function normalizeContent(row) {
+  const id = String(readField(row, ['contenido_id'])).trim()
+  if (!id) return null
   return {
-    uid: nomenclature || contentId,
-    id: contentId || nomenclature,
-    campaignId: String(readField(row, ['campana_id', 'campaña_id', 'Campaña ID'], fallbackCampaignId)).trim(),
-    campaignName: String(readField(row, ['campana', 'campaña', 'Campaña', 'Campaña Nombre'], '')).trim(),
-    marcaId: String(readField(row, ['Marca ID', 'marca_id'])).trim().toUpperCase(),
-    influencerId: String(readField(row, ['Influencer ID', 'influencer_id'])).trim(),
-    influencerName: String(readField(row, ['Influencer'])).trim(),
-    platform: String(readField(row, ['Plataforma', 'platform'])).trim(),
-    format: String(readField(row, ['Formato', 'format'])).trim(),
-    publishDate: normalizeDate(readField(row, ['Fecha Publicación', 'Fecha Publicacion', 'fecha_publicacion'])),
-    url: String(readField(row, ['URL o Embed', 'url', 'embed_url'])).trim(),
-    localVideoUrl: String(readField(row, ['URL Video Local', 'url_video_local'])).trim(),
-    views: safeNumber(readField(row, ['Views', 'views'])),
-    avgTime: readField(row, ['Tiempo Promedio (seg)'], '') === '' ? null : safeNumber(readField(row, ['Tiempo Promedio (seg)'])),
-    vtr: readField(row, ['VTR %'], '') === '' ? null : safeNumber(readField(row, ['VTR %'])),
-    reactions: safeNumber(readField(row, ['Reacciones', 'likes'])),
-    comments: safeNumber(readField(row, ['Comentarios', 'comments'])),
-    shares: safeNumber(readField(row, ['Compartidos', 'shares'])),
-    saves: safeNumber(readField(row, ['Guardados', 'saves'])),
-    clicks: safeNumber(readField(row, ['Clics al Enlace', 'clicks'])),
-    status: String(readField(row, ['Estado', 'status'])).trim(),
-    notes: String(readField(row, ['Notas', 'notes'])).trim(),
+    id,
+    uid: id,
+    campaignId: String(readField(row, ['campaign_id'])).trim(),
+    campaignName: String(readField(row, ['campaign_name'])).trim(),
+    influencerCampaignId: String(readField(row, ['influencer_campaign_id'])).trim(),
+    influencerName: String(readField(row, ['influencer_name'])).trim(),
+    platform: String(readField(row, ['plataforma'])).trim(),
+    format: String(readField(row, ['formato'])).trim(),
+    publishDate: normalizeDate(readField(row, ['fecha_publicacion'])),
+    originType: String(readField(row, ['tipo_publicacion_origen'])).trim(),
+    publishingProfile: String(readField(row, ['perfil_publicacion'])).trim(),
+    url: String(readField(row, ['url_contenido'])).trim(),
+    embedCode: String(readField(row, ['embed_code'])).trim(),
+    thumbnail: normalizeDriveImage(readField(row, ['thumbnail_url'])) || String(readField(row, ['thumbnail_url'])).trim(),
+    caption: String(readField(row, ['caption'])).trim(),
+    views: safeNumber(readField(row, ['views_organicas'])),
+    reach: safeNumber(readField(row, ['alcance_organico'])),
+    likes: safeNumber(readField(row, ['likes_reacciones_organicas'])),
+    comments: safeNumber(readField(row, ['comentarios_organicos'])),
+    shares: safeNumber(readField(row, ['compartidos_organicos'])),
+    saves: safeNumber(readField(row, ['guardados_organicos'])),
+    clicks: safeNumber(readField(row, ['clics_organicos'])),
+    avgTime: readField(row, ['tiempo_promedio_seg'], '') === '' ? null : safeNumber(readField(row, ['tiempo_promedio_seg'])),
+    vtr: readField(row, ['vtr_pct'], '') === '' ? null : safeNumber(readField(row, ['vtr_pct'])),
+    dataSource: String(readField(row, ['fuente_dato'])).trim(),
+    status: String(readField(row, ['estatus_contenido'])).trim(),
+    notes: String(readField(row, ['notas'])).trim(),
   }
 }
 
-function normalizePaid(row, fallbackCampaignId) {
-  const contentId = String(readField(row, ['contenido_id', 'ID Contenido', 'Contenido ID'])).trim()
+function normalizePaidTikTok(row) {
+  const id = String(readField(row, ['paid_tiktok_id'])).trim()
+  if (!id) return null
+  const views6s = safeNumber(readField(row, ['views_6s']))
+  const videoViews = safeNumber(readField(row, ['video_views']))
+  const views2s = safeNumber(readField(row, ['views_2s']))
   return {
-    id: String(readField(row, ['paid_id', 'ID'], `${contentId}-PAID`)).trim(),
-    campaignId: String(readField(row, ['campana_id', 'campaña_id', 'Campaña ID'], fallbackCampaignId)).trim(),
-    contentId,
-    marcaId: String(readField(row, ['marca_id', 'Marca ID'])).trim().toUpperCase(),
-    influencerId: String(readField(row, ['influencer_id', 'Influencer ID'])).trim(),
-    platform: String(readField(row, ['plataforma', 'Plataforma'])).trim(),
-    views6s: safeNumber(readField(row, ['views_6s', 'Views de 6 segundos', 'Views 6s'])),
-    reach: safeNumber(readField(row, ['alcance', 'Alcance'])),
-    likes: safeNumber(readField(row, ['likes', 'me gusta', 'Reacciones'])),
-    comments: safeNumber(readField(row, ['comentarios', 'Comentarios'])),
-    shares: safeNumber(readField(row, ['compartidos', 'Compartidos'])),
-    saves: safeNumber(readField(row, ['guardados', 'Guardados'])),
-    investment: safeNumber(readField(row, ['inversion_pauta', 'inversión_pauta', 'Inversión de pauta', 'Inversion de pauta'])),
+    id,
+    network: 'TikTok',
+    campaignId: String(readField(row, ['campaign_id'])).trim(),
+    campaignName: String(readField(row, ['campaign_name'])).trim(),
+    influencerCampaignId: String(readField(row, ['influencer_campaign_id'])).trim(),
+    influencerName: String(readField(row, ['influencer_name'])).trim(),
+    contentId: String(readField(row, ['contenido_id'])).trim(),
+    contentUrl: String(readField(row, ['contenido_url'])).trim(),
+    startDate: normalizeDate(readField(row, ['fecha_inicio_pauta'])),
+    endDate: normalizeDate(readField(row, ['fecha_fin_pauta'])),
+    paidFrom: String(readField(row, ['pautado_desde'])).trim(),
+    adAccount: String(readField(row, ['cuenta_ads'])).trim(),
+    objective: String(readField(row, ['objetivo_pauta'])).trim(),
+    investment: safeNumber(readField(row, ['inversion_pauta'])),
+    currency: String(readField(row, ['moneda'], 'MXN')).trim() || 'MXN',
+    impressions: safeNumber(readField(row, ['impresiones'])),
+    reach: safeNumber(readField(row, ['alcance'])),
+    views2s,
+    views6s,
+    videoViews,
+    views: views6s || videoViews || views2s,
+    completions: safeNumber(readField(row, ['reproducciones_completas'])),
+    likes: safeNumber(readField(row, ['likes'])),
+    comments: safeNumber(readField(row, ['comentarios'])),
+    shares: safeNumber(readField(row, ['compartidos'])),
+    saves: safeNumber(readField(row, ['guardados'])),
+    clicks: safeNumber(readField(row, ['clics'])),
+    ctr: safeNumber(readField(row, ['ctr_pct'])),
+    cpm: safeNumber(readField(row, ['cpm'])),
+    cpv: safeNumber(readField(row, ['cpv'])),
+    dataSource: String(readField(row, ['fuente_dato'])).trim(),
+    notes: String(readField(row, ['notas'])).trim(),
   }
 }
 
-function normalizeProjection(row, fallbackCampaignId) {
+function normalizePaidMeta(row) {
+  const id = String(readField(row, ['paid_meta_id'])).trim()
+  if (!id) return null
+  const thruplays = safeNumber(readField(row, ['thruplays']))
+  const videoPlays = safeNumber(readField(row, ['video_plays']))
+  const views3s = safeNumber(readField(row, ['reproducciones_3s']))
   return {
-    campaignId: String(readField(row, ['campana_id', 'campaña_id', 'Campaña ID'], fallbackCampaignId)).trim(),
-    marcaId: String(readField(row, ['Marca ID', 'marca_id'])).trim().toUpperCase(),
-    influencerId: String(readField(row, ['Influencer ID', 'influencer_id'])).trim(),
-    ttVideosPlan: safeNumber(readField(row, ['TT Videos Plan'])),
-    igReelsPlan: safeNumber(readField(row, ['IG Reels Plan'])),
-    fbReelsPlan: safeNumber(readField(row, ['FB Reels Plan'])),
-    igStoriesPlan: safeNumber(readField(row, ['IG Stories Plan'])),
-    fbStoriesPlan: safeNumber(readField(row, ['FB Stories Plan'])),
+    id,
+    network: 'Meta',
+    paidPlatform: String(readField(row, ['plataforma_pauta'])).trim() || 'Meta',
+    placement: String(readField(row, ['placement'])).trim(),
+    campaignId: String(readField(row, ['campaign_id'])).trim(),
+    campaignName: String(readField(row, ['campaign_name'])).trim(),
+    influencerCampaignId: String(readField(row, ['influencer_campaign_id'])).trim(),
+    influencerName: String(readField(row, ['influencer_name'])).trim(),
+    contentId: String(readField(row, ['contenido_id'])).trim(),
+    contentUrl: String(readField(row, ['contenido_url'])).trim(),
+    startDate: normalizeDate(readField(row, ['fecha_inicio_pauta'])),
+    endDate: normalizeDate(readField(row, ['fecha_fin_pauta'])),
+    paidFrom: String(readField(row, ['pautado_desde'])).trim(),
+    adAccount: String(readField(row, ['cuenta_ads'])).trim(),
+    objective: String(readField(row, ['objetivo_pauta'])).trim(),
+    investment: safeNumber(readField(row, ['inversion_pauta'])),
+    currency: String(readField(row, ['moneda'], 'MXN')).trim() || 'MXN',
+    impressions: safeNumber(readField(row, ['impresiones'])),
+    reach: safeNumber(readField(row, ['alcance'])),
+    views3s,
+    thruplays,
+    videoPlays,
+    views: thruplays || videoPlays || views3s,
+    likes: safeNumber(readField(row, ['reacciones'])),
+    comments: safeNumber(readField(row, ['comentarios'])),
+    shares: safeNumber(readField(row, ['compartidos'])),
+    saves: safeNumber(readField(row, ['guardados'])),
+    clicks: safeNumber(readField(row, ['clics_link'])),
+    ctr: safeNumber(readField(row, ['ctr_pct'])),
+    cpm: safeNumber(readField(row, ['cpm'])),
+    cpv: safeNumber(readField(row, ['cpv'])),
+    dataSource: String(readField(row, ['fuente_dato'])).trim(),
+    notes: String(readField(row, ['notas'])).trim(),
   }
 }
 
-function normalizeFinding(row, fallbackCampaignId) {
+function normalizeSentiment(row) {
+  const id = String(readField(row, ['sentiment_id'])).trim()
+  if (!id) return null
   return {
-    id: readField(row, ['ID']),
-    campaignId: String(readField(row, ['campana_id', 'campaña_id', 'Campaña ID'], fallbackCampaignId)).trim(),
-    marcaId: String(readField(row, ['Marca ID', 'marca_id'])).trim().toUpperCase(),
-    title: String(readField(row, ['Título', 'Titulo', 'title'])).trim(),
-    category: String(readField(row, ['Categoría', 'Categoria', 'category'])).trim(),
-    priority: String(readField(row, ['Prioridad', 'priority'], 'medium')).trim().toLowerCase(),
-    insight: String(readField(row, ['Insight'])).trim(),
-    recommendation: String(readField(row, ['Recomendación', 'Recomendacion'])).trim(),
+    id,
+    campaignId: String(readField(row, ['campaign_id'])).trim(),
+    campaignName: String(readField(row, ['campaign_name'])).trim(),
+    cutDate: normalizeDate(readField(row, ['fecha_corte'])),
+    general: String(readField(row, ['sentimiento_general'])).trim(),
+    positivePct: safeNumber(readField(row, ['positivo_pct'])),
+    neutralPct: safeNumber(readField(row, ['neutro_pct'])),
+    negativePct: safeNumber(readField(row, ['negativo_pct'])),
+    summary: String(readField(row, ['resumen_general'])).trim(),
+    positiveRead: String(readField(row, ['lectura_positiva'])).trim(),
+    neutralRead: String(readField(row, ['lectura_neutra'])).trim(),
+    negativeRead: String(readField(row, ['lectura_negativa'])).trim(),
+    themes: String(readField(row, ['temas_recurrentes'])).trim(),
+    frictions: String(readField(row, ['dudas_fricciones'])).trim(),
+    opportunities: String(readField(row, ['oportunidades'])).trim(),
+    notes: String(readField(row, ['notas'])).trim(),
   }
 }
 
-function normalizeSentiment(row, fallbackCampaignId) {
-  const contentId = String(readField(row, ['Contenido ID', 'contenido_id'])).trim()
-  const marcaId = String(readField(row, ['Marca ID', 'marca_id'], contentId.split('_')[0] || '')).trim().toUpperCase()
+function normalizeEvidence(row) {
+  const id = String(readField(row, ['evidencia_id'])).trim()
+  if (!id) return null
   return {
-    id: readField(row, ['ID']),
-    campaignId: String(readField(row, ['campana_id', 'campaña_id', 'Campaña ID'], fallbackCampaignId)).trim(),
-    contentId,
-    marcaId,
-    influencerId: String(readField(row, ['Influencer ID', 'influencer_id'])).trim(),
-    influencerName: String(readField(row, ['Influencer'])).trim(),
-    platform: String(readField(row, ['Plataforma'])).trim(),
-    screenshot: String(readField(row, ['URL Screenshot', 'screenshot_url'])).trim(),
-    text: String(readField(row, ['Texto Comentario', 'comentario'])).trim(),
-    sentiment: String(readField(row, ['Sentimiento', 'sentiment'])).trim(),
-    highlighted: String(readField(row, ['Destacado', 'highlighted'])).toLowerCase().replace('í', 'i') === 'si',
+    id,
+    campaignId: String(readField(row, ['campaign_id'])).trim(),
+    campaignName: String(readField(row, ['campaign_name'])).trim(),
+    influencerCampaignId: String(readField(row, ['influencer_campaign_id'])).trim(),
+    influencerName: String(readField(row, ['influencer_name'])).trim(),
+    contentId: String(readField(row, ['contenido_id'])).trim(),
+    platform: String(readField(row, ['plataforma'])).trim(),
+    date: normalizeDate(readField(row, ['fecha'])),
+    commentType: String(readField(row, ['tipo_comentario'])).trim(),
+    sentiment: String(readField(row, ['sentimiento'])).trim(),
+    text: String(readField(row, ['texto_comentario'])).trim(),
+    screenshot: String(readField(row, ['embed_screenshot'])).trim() || drivePreview(readField(row, ['screenshot_url'])),
+    highlighted: yes(readField(row, ['destacado'])),
+    analysisNote: String(readField(row, ['nota_analisis'])).trim(),
+    topic: String(readField(row, ['etiqueta_tema'])).trim(),
+    notes: String(readField(row, ['notas'])).trim(),
+  }
+}
+
+function normalizeFinding(row) {
+  const id = String(readField(row, ['finding_id'])).trim()
+  if (!id) return null
+  return {
+    id,
+    campaignId: String(readField(row, ['campaign_id'])).trim(),
+    campaignName: String(readField(row, ['campaign_name'])).trim(),
+    date: normalizeDate(readField(row, ['fecha'])),
+    category: String(readField(row, ['categoria'])).trim(),
+    priority: String(readField(row, ['prioridad'])).trim(),
+    title: String(readField(row, ['titulo'])).trim(),
+    insight: String(readField(row, ['hallazgo'])).trim(),
+    relatedEvidence: String(readField(row, ['evidencia_relacionada'])).trim(),
+    recommendation: String(readField(row, ['recomendacion'])).trim(),
+    nextAction: String(readField(row, ['accion_siguiente'])).trim(),
+    status: String(readField(row, ['estatus'])).trim(),
+    visible: yes(readField(row, ['visible_dashboard'])),
+    order: safeNumber(readField(row, ['orden'])),
+    notes: String(readField(row, ['notas'])).trim(),
   }
 }
 
 export function useInfluencerData(marcaId) {
   const [state, setState] = useState({ loading: true, error: null, raw: null })
-  const sheetBrandId = BRAND_TO_INFLUENCER_ID[marcaId] || String(marcaId || '').toUpperCase()
+  const selectedBrand = useMemo(() => brandFromRoute(marcaId), [marcaId])
 
   const loadData = useCallback(async () => {
     setState(prev => ({ ...prev, loading: true, error: null }))
     try {
-      const [configRows, brandRows, influencerRows, contentRows, projectionRows, findingRows, commentRows, campaignRows, paidRows] = await Promise.all([
-        fetchSheet('⚙️ Config', true),
-        fetchSheet('📅 Marca'),
-        fetchSheet('👤 Influencers'),
-        fetchSheet('📊 Contenidos'),
-        fetchSheet('🎯 Proyecciones', true),
-        fetchSheet('💡 KeyFindings', true),
-        fetchSheet('💬 Comentarios', true),
-        fetchSheet('Campañas', true).catch(() => fetchSheet('Campanas', true)),
-        fetchSheet('Pauta_Influencers', true),
+      const [
+        campaignRows,
+        influencerRows,
+        contentRows,
+        paidTikTokRows,
+        paidMetaRows,
+        sentimentRows,
+        evidenceRows,
+        findingRows,
+      ] = await Promise.all([
+        fetchSheet(SHEETS.campaigns),
+        fetchSheet(SHEETS.influencers),
+        fetchSheet(SHEETS.contents),
+        fetchSheet(SHEETS.paidTikTok, true),
+        fetchSheet(SHEETS.paidMeta, true),
+        fetchSheet(SHEETS.sentiment, true),
+        fetchSheet(SHEETS.evidences, true),
+        fetchSheet(SHEETS.findings, true),
       ])
+
       setState({
         loading: false,
         error: null,
-        raw: { configRows, brandRows, influencerRows, contentRows, projectionRows, findingRows, commentRows, campaignRows, paidRows },
+        raw: { campaignRows, influencerRows, contentRows, paidTikTokRows, paidMetaRows, sentimentRows, evidenceRows, findingRows },
       })
     } catch (error) {
       setState({ loading: false, error: error.message || 'No se pudieron cargar los datos de influencers', raw: null })
@@ -210,45 +342,78 @@ export function useInfluencerData(marcaId) {
 
   const data = useMemo(() => {
     if (!state.raw) return null
-    const brands = state.raw.brandRows.map(normalizeBrand).filter(row => row.id)
-    const brand = brands.find(row => row.id === sheetBrandId) || brands[0]
-    const fallbackCampaign = defaultCampaignForBrand(brand)
-    const campaigns = state.raw.campaignRows.map(row => normalizeCampaign(row, brand)).filter(row => row && row.marcaId === sheetBrandId)
-    const usableCampaigns = campaigns.length ? campaigns : (fallbackCampaign ? [fallbackCampaign] : [])
-    const fallbackCampaignId = usableCampaigns[0]?.id || ''
 
-    const influencers = state.raw.influencerRows.map(normalizeInfluencer).filter(row => row.marcaId === sheetBrandId && row.id)
-    const contents = state.raw.contentRows.map(row => normalizeContent(row, fallbackCampaignId)).filter(row => row.marcaId === sheetBrandId && row.uid)
-    const paid = state.raw.paidRows.map(row => normalizePaid(row, fallbackCampaignId)).filter(row => row.marcaId === sheetBrandId || influencers.some(inf => inf.id === row.influencerId))
-    const projections = state.raw.projectionRows.map(row => normalizeProjection(row, fallbackCampaignId)).filter(row => row.marcaId === sheetBrandId || influencers.some(inf => inf.id === row.influencerId))
-    const findings = state.raw.findingRows.map(row => normalizeFinding(row, fallbackCampaignId)).filter(row => !row.marcaId || row.marcaId === sheetBrandId)
-    const sentimentRows = state.raw.commentRows.map(row => normalizeSentiment(row, fallbackCampaignId)).filter(row => !row.marcaId || row.marcaId === sheetBrandId)
+    const campaigns = state.raw.campaignRows
+      .map(normalizeCampaign)
+      .filter(Boolean)
+      .filter(row => isSameBrand(row.brandName, selectedBrand.name))
 
-    const config = {}
-    state.raw.configRows.forEach(row => {
-      const key = readField(row, ['Clave', 'campo'])
-      const value = readField(row, ['Valor', 'valor'])
-      if (key) config[key] = value
-    })
+    const visibleCampaigns = campaigns.filter(row => row.dashboardVisible)
+    const visibleCampaignIds = new Set(visibleCampaigns.map(row => row.id))
+
+    const influencers = state.raw.influencerRows
+      .map(normalizeInfluencer)
+      .filter(Boolean)
+      .filter(row => visibleCampaignIds.has(row.campaignId))
+
+    const contents = state.raw.contentRows
+      .map(normalizeContent)
+      .filter(Boolean)
+      .filter(row => visibleCampaignIds.has(row.campaignId))
+
+    const paidTikTok = state.raw.paidTikTokRows
+      .map(normalizePaidTikTok)
+      .filter(Boolean)
+      .filter(row => visibleCampaignIds.has(row.campaignId))
+
+    const paidMeta = state.raw.paidMetaRows
+      .map(normalizePaidMeta)
+      .filter(Boolean)
+      .filter(row => visibleCampaignIds.has(row.campaignId))
+
+    const paid = [...paidTikTok, ...paidMeta]
+
+    const validCampaignIds = new Set(visibleCampaigns.map(row => row.id))
+    const sentiment = state.raw.sentimentRows
+      .map(normalizeSentiment)
+      .filter(Boolean)
+      .filter(row => validCampaignIds.has(row.campaignId))
+
+    const evidences = state.raw.evidenceRows
+      .map(normalizeEvidence)
+      .filter(Boolean)
+      .filter(row => validCampaignIds.has(row.campaignId) && row.highlighted)
+
+    const findings = state.raw.findingRows
+      .map(normalizeFinding)
+      .filter(Boolean)
+      .filter(row => validCampaignIds.has(row.campaignId))
+      .sort((a, b) => safeNumber(a.order) - safeNumber(b.order))
+
+    const campaignBundles = visibleCampaigns
+      .map(campaign => buildCampaignBundle({ campaign, influencers, contents, paid, sentiment, evidences, findings }))
+      .sort((a, b) => String(b.startDate).localeCompare(String(a.startDate)))
 
     return {
-      config,
-      brand,
-      campaigns: usableCampaigns,
+      brand: selectedBrand,
+      campaigns: campaignBundles,
+      allCampaigns: campaigns,
       influencers,
       contents,
       paid,
-      projections,
+      paidTikTok,
+      paidMeta,
+      sentiment,
+      evidences,
       findings,
-      sentiment: sentimentRows.filter(row => row.highlighted),
-      totals: {
-        organic: aggregateContent(contents),
-        paid: aggregatePaid(paid),
-        investmentOrganic: influencers.reduce((sum, row) => sum + safeNumber(row.fee), 0),
+      totals: buildBrandTotals(campaignBundles),
+      paidTotals: aggregatePaid(paid),
+      source: {
+        spreadsheetId: INFLUENCER_SHEET_ID,
+        tabs: SHEETS,
       },
-      rollups: buildInfluencerRollups({ influencers, contents, paid, projections }),
     }
-  }, [state.raw, sheetBrandId])
+  }, [state.raw, selectedBrand])
 
-  return { ...state, data, refresh: loadData, sheetBrandId }
+  return { ...state, data, refresh: loadData, sheetBrandId: selectedBrand.name }
 }
