@@ -79,6 +79,7 @@ function normalizeInfluencer(row) {
 
 function localInfluencerPhoto(id) {
   const photos = {
+    aldotdenigris: '/influencers/aldotdenigris.png',
     bastiandelfin: '/influencers/bastiandelfin.png',
     guszapiain: '/influencers/guszapiain.png',
   }
