@@ -102,15 +102,6 @@ export function InfluencerDashboard() {
         )}
       </main>
 
-      {selectedContent && (
-        <ContentModal
-          content={selectedContent.content}
-          campaign={selectedContent.campaign}
-          influencer={selectedContent.influencer}
-          evidences={selectedContent.evidences || []}
-          onClose={() => setSelectedContent(null)}
-        />
-      )}
       {selectedInfluencer && (
         <InfluencerModal
           influencer={selectedInfluencer.influencer}
@@ -122,6 +113,15 @@ export function InfluencerDashboard() {
             evidences: selectedInfluencer.campaign.evidences.filter(evidence => evidence.contentId === content.id),
           })}
           onClose={() => setSelectedInfluencer(null)}
+        />
+      )}
+      {selectedContent && (
+        <ContentModal
+          content={selectedContent.content}
+          campaign={selectedContent.campaign}
+          influencer={selectedContent.influencer}
+          evidences={selectedContent.evidences || []}
+          onClose={() => setSelectedContent(null)}
         />
       )}
       {selectedPaid && <PaidModal paid={selectedPaid} onClose={() => setSelectedPaid(null)} />}
