@@ -10,18 +10,18 @@ import { drivePreview, platformColors, sortByMetric } from '../utils/influencerM
 import { formatCurrency, formatDecimal, formatNumber, safeNumber } from '../utils/format'
 
 const rankingOptions = [
-  { key: 'organicViews', label: 'Views org\u00e1nicas' },
+  { key: 'organicViews', label: 'Views orgánicas' },
   { key: 'interactions', label: 'Interacciones' },
   { key: 'er', label: 'ER' },
-  { key: 'organicCpv', label: 'CPV org\u00e1nico' },
+  { key: 'organicCpv', label: 'CPV orgánico' },
   { key: 'paidViews', label: 'Views pauta' },
   { key: 'paidCpv', label: 'CPV pauta' },
   { key: 'totalImpact', label: 'Impacto total' },
 ]
 
 const contentSortOptions = [
-  { key: 'organicViews', label: 'M\u00e1s views' },
-  { key: 'interactions', label: 'M\u00e1s interacciones' },
+  { key: 'organicViews', label: 'Más views' },
+  { key: 'interactions', label: 'Más interacciones' },
   { key: 'er', label: 'Mejor ER' },
   { key: 'organicCpv', label: 'Menor CPV' },
 ]
@@ -161,7 +161,7 @@ function Header({ brand, loading, selectedCampaign, onBack, onRefresh, onHome, t
           <div className="flex flex-wrap items-center gap-2">
             {selectedCampaign && (
               <button onClick={onHome} className="rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-xs font-semibold text-white/70 hover:bg-white/10">
-                Hist\u00f3rico de marca
+                Histórico de marca
               </button>
             )}
             <button onClick={onRefresh} className="grid h-10 w-10 place-items-center rounded-lg border border-white/10 bg-white/6 text-white/70 hover:bg-white/10 hover:text-white" title="Actualizar">
@@ -198,7 +198,7 @@ function LoadingState() {
 
 function BrandHome({ data, rankingMetric, onRankingChange, onCampaignSelect, onContentSelect, onInfluencerSelect, theme }) {
   const yearLabel = getYearLabel(data.campaigns)
-  const phrase = `Durante ${yearLabel}, ${data.brand.name} ha realizado ${data.totals.campaigns} campa\u00f1as con influencers, colaborando con ${data.totals.influencers} participaciones y generando ${formatNumber(data.totals.organicViews)} views org\u00e1nicas.`
+  const phrase = `Durante ${yearLabel}, ${data.brand.name} ha realizado ${data.totals.campaigns} campañas con influencers, colaborando con ${data.totals.influencers} participaciones y generando ${formatNumber(data.totals.organicViews)} views orgánicas.`
 
   const rankedCampaigns = sortByMetric(data.campaigns, rankingMetric).slice(0, 5)
   const rankedInfluencers = sortByMetric(
@@ -215,12 +215,12 @@ function BrandHome({ data, rankingMetric, onRankingChange, onCampaignSelect, onC
       <section className="influencer-module p-5 md:p-7">
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
           <div>
-            <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-white/45">Home hist\u00f3rico de marca</p>
+            <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-white/45">Home histórico de marca</p>
             <h2 className="font-display text-3xl font-bold text-white md:text-5xl">{data.brand.name}</h2>
             <p className="mt-4 max-w-4xl text-base leading-7 text-white/68">{phrase}</p>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <Metric label="Campa\u00f1as realizadas" value={formatNumber(data.totals.campaigns)} />
+            <Metric label="Campañas realizadas" value={formatNumber(data.totals.campaigns)} />
             <Metric label="Influencers" value={formatNumber(data.totals.influencers)} />
             <Metric label="Contenidos" value={formatNumber(data.totals.contents)} />
             <Metric label="CPV total" value={formatMaybeCurrency(data.totals.totalCpv)} />
@@ -229,15 +229,15 @@ function BrandHome({ data, rankingMetric, onRankingChange, onCampaignSelect, onC
       </section>
 
       <section className="grid grid-cols-2 gap-4 xl:grid-cols-6">
-        <MetricCard title="Views org\u00e1nicas" value={formatNumber(data.totals.organicViews)} icon={Eye} color={theme.primary} />
+        <MetricCard title="Views orgánicas" value={formatNumber(data.totals.organicViews)} icon={Eye} color={theme.primary} />
         <MetricCard title="Views pauta" value={data.totals.paidViews ? formatNumber(data.totals.paidViews) : 'Sin pauta'} icon={Megaphone} color="#f59e0b" />
         <MetricCard title="Interacciones" value={formatNumber(data.totals.totalInteractions)} icon={Heart} color="#ec4899" />
-        <MetricCard title="Inversi\u00f3n influencers" value={formatMaybeCurrency(data.totals.influencerInvestment)} icon={Users} color="#22c55e" />
-        <MetricCard title="Inversi\u00f3n pauta" value={data.totals.paidInvestment ? formatCurrency(data.totals.paidInvestment) : 'Pendiente'} icon={Wallet} color="#a78bfa" />
+        <MetricCard title="Inversión influencers" value={formatMaybeCurrency(data.totals.influencerInvestment)} icon={Users} color="#22c55e" />
+        <MetricCard title="Inversión pauta" value={data.totals.paidInvestment ? formatCurrency(data.totals.paidInvestment) : 'Pendiente'} icon={Wallet} color="#a78bfa" />
         <MetricCard title="ER promedio" value={formatMaybePercent(data.totals.er)} icon={BarChart3} color="#38bdf8" />
       </section>
 
-      <Module eyebrow="Timeline" title="Campa\u00f1as de influencer marketing" icon={CalendarDays} theme={theme}>
+      <Module eyebrow="Timeline" title="Campañas de influencer marketing" icon={CalendarDays} theme={theme}>
         <div className="grid gap-3 xl:grid-cols-2">
           {data.campaigns.map(campaign => (
             <CampaignTimelineCard key={campaign.id} campaign={campaign} onSelect={() => onCampaignSelect(campaign.id)} theme={theme} />
@@ -245,7 +245,7 @@ function BrandHome({ data, rankingMetric, onRankingChange, onCampaignSelect, onC
         </div>
       </Module>
 
-      <Module eyebrow="Rankings hist\u00f3ricos" title="Comparativos de resultados" icon={Trophy} theme={theme}>
+      <Module eyebrow="Rankings históricos" title="Comparativos de resultados" icon={Trophy} theme={theme}>
         <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
           {rankingOptions.map(option => (
             <Chip key={option.key} active={rankingMetric === option.key} onClick={() => onRankingChange(option.key)}>
@@ -254,7 +254,7 @@ function BrandHome({ data, rankingMetric, onRankingChange, onCampaignSelect, onC
           ))}
         </div>
         <div className="grid gap-4 xl:grid-cols-3">
-          <RankingList title="Top campa\u00f1as" rows={rankedCampaigns} renderRow={(campaign, index) => (
+          <RankingList title="Top campañas" rows={rankedCampaigns} renderRow={(campaign, index) => (
             <CampaignRankingRow key={campaign.id} campaign={campaign} index={index} onSelect={() => onCampaignSelect(campaign.id)} theme={theme} />
           )} />
           <RankingList title="Top colaboradores" rows={rankedInfluencers} renderRow={(influencer, index) => (
@@ -319,33 +319,33 @@ function CampaignDetail({ campaign, onBack, onContentSelect, onInfluencerSelect,
           <div>
             <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-white/45">Detalle de campa&ntilde;a</p>
             <h2 className="font-display text-3xl font-bold text-white md:text-5xl">{campaign.name}</h2>
-            <p className="mt-2 text-sm text-white/55">{formatDateRange(campaign.startDate, campaign.endDate)} - {campaign.type || 'Campa\u00f1a'}</p>
+            <p className="mt-2 text-sm text-white/55">{formatDateRange(campaign.startDate, campaign.endDate)} - {campaign.type || 'Campaña'}</p>
             <p className="mt-4 max-w-4xl text-sm leading-6 text-white/68">{campaign.objective || campaign.description || 'Objetivo pendiente de carga.'}</p>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Metric label="Influencers" value={formatNumber(campaign.influencerCount)} />
             <Metric label="Contenidos" value={formatNumber(campaign.contentCount)} />
-            <Metric label="Inversi\u00f3n influencers" value={formatMaybeCurrency(campaign.influencerCost)} />
-            <Metric label="Inversi\u00f3n pauta" value={campaign.paidRows.length ? formatCurrency(campaign.paid.investment) : emptyPaidLabel(campaign)} />
+            <Metric label="Inversión influencers" value={formatMaybeCurrency(campaign.influencerCost)} />
+            <Metric label="Inversión pauta" value={campaign.paidRows.length ? formatCurrency(campaign.paid.investment) : emptyPaidLabel(campaign)} />
           </div>
         </div>
       </section>
 
       <div className="grid gap-4 xl:grid-cols-3">
-        <ResultPanel title="Org\u00e1nico de influencers" icon={Users} color={theme.primary} items={[
-          ['Views org\u00e1nicas', formatNumber(campaign.organic.views)],
+        <ResultPanel title="Orgánico de influencers" icon={Users} color={theme.primary} items={[
+          ['Views orgánicas', formatNumber(campaign.organic.views)],
           ['Interacciones', formatNumber(campaign.organic.interactions)],
           ['ER', formatMaybePercent(campaign.organic.er)],
-          ['CPV org\u00e1nico', formatMaybeCurrency(campaign.organicCpv)],
+          ['CPV orgánico', formatMaybeCurrency(campaign.organicCpv)],
         ]} />
         <ResultPanel title="Pauta de contenidos" icon={Megaphone} color="#f59e0b" empty={!campaign.paidRows.length} emptyText={emptyPaidLabel(campaign)} items={[
-          ['Inversi\u00f3n pauta', formatMaybeCurrency(campaign.paid.investment)],
+          ['Inversión pauta', formatMaybeCurrency(campaign.paid.investment)],
           ['Alcance', formatNumber(campaign.paid.reach)],
           ['Views pauta', formatNumber(campaign.paid.views)],
           ['CPV pauta', formatMaybeCurrency(campaign.paid.cpv)],
         ]} />
         <ResultPanel title="Total combinado" icon={BarChart3} color="#22c55e" items={[
-          ['Inversi\u00f3n total', formatMaybeCurrency(campaign.totalInvestment)],
+          ['Inversión total', formatMaybeCurrency(campaign.totalInvestment)],
           ['Views totales', formatNumber(campaign.totalViews)],
           ['Interacciones totales', formatNumber(campaign.totalInteractions)],
           ['CPV total', formatMaybeCurrency(campaign.totalCpv)],
@@ -383,7 +383,7 @@ function ResultPanel({ title, icon: Icon, color, items, empty, emptyText }) {
 
 function InfluencerCampaignSection({ campaign, onInfluencerSelect, theme }) {
   return (
-    <Module eyebrow="Org\u00e1nico por influencer" title="Colaboradores participantes" icon={Users} theme={theme}>
+    <Module eyebrow="Orgánico por influencer" title="Colaboradores participantes" icon={Users} theme={theme}>
       <div className="grid gap-4 xl:grid-cols-2">
         {campaign.rollups.map(influencer => (
           <button key={influencer.id} onClick={() => onInfluencerSelect({ influencer, campaign })} className="rounded-lg border border-white/10 bg-white/5 p-4 text-left hover:bg-white/10">
@@ -458,7 +458,7 @@ function CampaignContentSection({ campaign, onContentSelect, theme }) {
   const sorted = sortByMetric(filtered.map(content => decorateContent(content, campaign)), sortKey)
 
   return (
-    <Module eyebrow="Contenidos de campa\u00f1a" title="Piezas publicadas" icon={Camera} theme={theme}>
+    <Module eyebrow="Contenidos de campaña" title="Piezas publicadas" icon={Camera} theme={theme}>
       <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="relative max-w-xl flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
@@ -484,7 +484,7 @@ function CampaignContentSection({ campaign, onContentSelect, theme }) {
           })} theme={theme} />
         ))}
       </div>
-      {!sorted.length && <EmptyState title="Sin contenidos" text="No hay piezas para esta selecci\u00f3n." />}
+      {!sorted.length && <EmptyState title="Sin contenidos" text="No hay piezas para esta selección." />}
     </Module>
   )
 }
@@ -523,7 +523,7 @@ function CampaignPaidSection({ campaign, onContentSelect, onPaidSelect, theme })
   if (!campaign.paidRows.length) {
     return (
       <Module eyebrow="Pauta de contenido" title="Resultados pagados" icon={Megaphone} theme={theme}>
-        <EmptyState title={emptyPaidLabel(campaign)} text="Cuando se carguen resultados en 04_Pauta_TikTok o 05_Pauta_Meta, aparecer\u00e1n aqu\u00ed ligados a contenido, influencer y campa\u00f1a." />
+        <EmptyState title={emptyPaidLabel(campaign)} text="Cuando se carguen resultados en 04_Pauta_TikTok o 05_Pauta_Meta, aparecerán aquí ligados a contenido, influencer y campaña." />
       </Module>
     )
   }
@@ -534,7 +534,7 @@ function CampaignPaidSection({ campaign, onContentSelect, onPaidSelect, theme })
   return (
     <Module eyebrow="Pauta de contenido" title="Resultados pagados" icon={Megaphone} theme={theme}>
       <div className="mb-4 grid grid-cols-2 gap-2 xl:grid-cols-5">
-        <Metric label="Inversi\u00f3n" value={formatCurrency(campaign.paid.investment)} />
+        <Metric label="Inversión" value={formatCurrency(campaign.paid.investment)} />
         <Metric label="Alcance" value={formatNumber(campaign.paid.reach)} />
         <Metric label="Impresiones" value={formatNumber(campaign.paid.impressions)} />
         <Metric label="Views pauta" value={formatNumber(campaign.paid.views)} />
@@ -548,7 +548,7 @@ function CampaignPaidSection({ campaign, onContentSelect, onPaidSelect, theme })
       <div className="overflow-x-auto rounded-lg border border-white/10">
         <div className="min-w-[980px]">
           <div className="grid grid-cols-9 gap-3 bg-white/6 px-4 py-3 text-[10px] uppercase tracking-wider text-white/40">
-            <span>Contenido</span><span>Influencer</span><span>Red</span><span>Pautado desde</span><span>Inversi\u00f3n</span><span>Views</span><span>Alcance</span><span>CPV</span><span>CTR</span>
+            <span>Contenido</span><span>Influencer</span><span>Red</span><span>Pautado desde</span><span>Inversión</span><span>Views</span><span>Alcance</span><span>CPV</span><span>CTR</span>
           </div>
           {campaign.paidRows.map(row => {
             const content = campaign.contents.find(item => item.id === row.contentId)
@@ -580,9 +580,9 @@ function CampaignPaidSection({ campaign, onContentSelect, onPaidSelect, theme })
 function CampaignSentimentSection({ campaign, onContentSelect, theme }) {
   const latest = campaign.sentiment[0]
   return (
-    <Module eyebrow="Sentiment" title="Lectura cualitativa de campa\u00f1a" icon={MessageSquare} theme={theme}>
+    <Module eyebrow="Sentiment" title="Lectura cualitativa de campaña" icon={MessageSquare} theme={theme}>
       {!latest ? (
-        <EmptyState title="Sentiment pendiente de carga" text="No hay registros v\u00e1lidos ligados a este campaign_id." />
+        <EmptyState title="Sentiment pendiente de carga" text="No hay registros válidos ligados a este campaign_id." />
       ) : (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
           <div className="space-y-4">
@@ -610,7 +610,7 @@ function CampaignSentimentSection({ campaign, onContentSelect, theme }) {
 
 function EvidenceCarousel({ campaign, onContentSelect }) {
   if (!campaign.evidences.length) {
-    return <EmptyState title="Sin evidencias visibles" text="No hay comentarios destacados v\u00e1lidos para esta campa\u00f1a." />
+    return <EmptyState title="Sin evidencias visibles" text="No hay comentarios destacados válidos para esta campaña." />
   }
   return (
     <div className="flex gap-3 overflow-x-auto pb-2">
@@ -647,7 +647,7 @@ function CampaignFindingsSection({ campaign, theme }) {
   return (
     <Module eyebrow="Cierre narrativo" title="Hallazgos y recomendaciones" icon={Sparkles} theme={theme}>
       {!campaign.findings.length ? (
-        <EmptyState title="Hallazgos pendientes" text="No hay hallazgos visibles para dashboard ligados a esta campa\u00f1a." />
+        <EmptyState title="Hallazgos pendientes" text="No hay hallazgos visibles para dashboard ligados a esta campaña." />
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {campaign.findings.map(finding => (
@@ -686,14 +686,14 @@ function ContentModal({ content, campaign, influencer, evidences, onClose }) {
             <Metric label="ER org." value={formatMaybePercent(content.organicEr)} />
             <Metric label="CPV org." value={formatMaybeCurrency(content.organicCpv)} />
             <Metric label="Views pauta" value={content.hasPaid ? formatNumber(content.paid.views) : 'Sin pauta'} />
-            <Metric label="Inversi\u00f3n pauta" value={content.hasPaid ? formatCurrency(content.paid.investment) : 'Sin pauta'} />
+            <Metric label="Inversión pauta" value={content.hasPaid ? formatCurrency(content.paid.investment) : 'Sin pauta'} />
             <Metric label="Views totales" value={formatNumber(content.totalViews)} />
             <Metric label="Interacciones totales" value={formatNumber(content.totalInteractions)} />
           </div>
           <Qualitative label="Caption" value={content.caption || 'Sin caption capturado.'} />
-          <Qualitative label="Tipo de publicaci\u00f3n" value={content.originType || 'Pendiente'} />
+          <Qualitative label="Tipo de publicación" value={content.originType || 'Pendiente'} />
           <Qualitative label="Fuente de dato" value={content.dataSource || 'Pendiente'} />
-          {influencer && <Qualitative label="Inversi\u00f3n influencer atribuida" value={formatMaybeCurrency(influencer.netFee)} />}
+          {influencer && <Qualitative label="Inversión influencer atribuida" value={formatMaybeCurrency(influencer.netFee)} />}
           <EvidenceList evidences={evidences} />
         </div>
       </div>
@@ -752,7 +752,7 @@ function PaidModal({ paid, onClose }) {
   return (
     <Modal title={paid.id} subtitle={`${paid.network} - ${paid.influencerName}`} onClose={onClose}>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-        <Metric label="Inversi\u00f3n" value={formatMaybeCurrency(paid.investment)} />
+        <Metric label="Inversión" value={formatMaybeCurrency(paid.investment)} />
         <Metric label="Views pauta" value={formatNumber(paid.views)} />
         <Metric label="Alcance" value={formatNumber(paid.reach)} />
         <Metric label="Impresiones" value={formatNumber(paid.impressions)} />
@@ -793,7 +793,7 @@ function RankingList({ title, rows, renderRow }) {
     <div className="rounded-lg border border-white/10 bg-white/5 p-3">
       <h4 className="mb-3 font-bold text-white">{title}</h4>
       <div className="space-y-2">
-        {rows.length ? rows.map(renderRow) : <EmptyState title="Sin datos" text="A\u00fan no hay registros rankeables." />}
+        {rows.length ? rows.map(renderRow) : <EmptyState title="Sin datos" text="Aún no hay registros rankeables." />}
       </div>
     </div>
   )
@@ -835,7 +835,7 @@ function ContentRankingRow({ content, index, onSelect, theme }) {
         <Rank index={index} color={theme.primary} />
         <div className="min-w-0 flex-1">
           <p className="truncate font-semibold text-white">{content.influencerName}</p>
-          <p className="truncate text-xs text-white/45">{content.campaign.name} - {content.platform} - org\u00e1nico{content.hasPaid ? ' + pauta' : ''}</p>
+          <p className="truncate text-xs text-white/45">{content.campaign.name} - {content.platform} - orgánico{content.hasPaid ? ' + pauta' : ''}</p>
         </div>
         <span className="text-xs font-semibold text-white/70">{formatNumber(content.views)}</span>
       </div>
@@ -1115,7 +1115,7 @@ function bestNetwork(rows = []) {
 }
 
 function emptyPaidLabel(campaign) {
-  if (!campaign.includesPaid) return 'Esta campa\u00f1a no tiene pauta registrada'
+  if (!campaign.includesPaid) return 'Esta campaña no tiene pauta registrada'
   return 'Resultados de pauta pendientes de carga'
 }
 
